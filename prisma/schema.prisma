@@ -1,0 +1,166 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Project {
+  id                   String        @id @default(cuid())
+  name                 String
+  projectType          String        @default("greenfield")
+  rootPath             String
+  introFilePath        String?
+  doneProgressFilePath String?
+  futureFilePath       String?
+  implementationPlanFilePath String?
+  referenceDocsJson    String?
+  todoProgressFilePath String
+  buildCommand         String?
+  testCommand          String?
+  lintCommand          String?
+  startCommand         String?
+  allowedPathsJson     String?
+  blockedPathsJson     String?
+  defaultBranch        String?
+  autoRunEnabled       Boolean       @default(false)
+  memorySummaryJson    String?
+  memorySourcesJson    String?
+  memoryPromptBlock    String?
+  memoryRelevantFilesJson String?
+  memoryUpdatedAt      DateTime?
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+  tasks                Task[]
+  agentConfigs         AgentConfig[]
+  taskRuns             TaskRun[]
+  intakeJobs           IntakeJob[]
+}
+
+model Task {
+  id                     String      @id @default(cuid())
+  projectId              String
+  taskCode               String
+  title                  String
+  section                String?
+  subsection             String?
+  rawText                String
+  sourceFilePath         String
+  sourceLineStart        Int
+  sourceLineEnd          Int
+  status                 String
+  taskType               String
+  autoApprovable         Boolean     @default(true)
+  acceptanceCriteriaJson String?
+  dependenciesJson       String?
+  relevantFilesJson      String?
+  latestSummary          String?
+  createdAt              DateTime    @default(now())
+  updatedAt              DateTime    @updatedAt
+  project                Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  runs                   TaskRun[]
+  handoffs               Handoff[]
+  approvals              Approval[]
+}
+
+model AgentConfig {
+  id                   String   @id @default(cuid())
+  projectId            String
+  roleName             String
+  enabled              Boolean  @default(true)
+  provider             String
+  model                String
+  fallbackModel        String?
+  temperature          Float    @default(0.2)
+  maxTokens            Int      @default(4000)
+  canWriteFiles        Boolean  @default(false)
+  canRunCommands       Boolean  @default(false)
+  systemPromptTemplate String
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  project              Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model TaskRun {
+  id              String        @id @default(cuid())
+  projectId       String
+  taskId          String?
+  roleName        String
+  model           String
+  status          String
+  inputSummary    String
+  outputSummary   String
+  fullOutputPath  String?
+  diffPath        String?
+  startedAt       DateTime      @default(now())
+  endedAt         DateTime?
+  tokenUsageJson  String?
+  costJson        String?
+  project         Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  task            Task?         @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  commandRuns     CommandRun[]
+  artifacts       Artifact[]
+}
+
+model Handoff {
+  id         String   @id @default(cuid())
+  taskId     String
+  fromRole   String
+  toRole     String
+  payloadJson String
+  createdAt  DateTime @default(now())
+  task       Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+}
+
+model CommandRun {
+  id         String   @id @default(cuid())
+  taskRunId  String
+  command    String
+  cwd        String
+  exitCode   Int
+  stdoutPath String?
+  stderrPath String?
+  durationMs Int
+  createdAt  DateTime @default(now())
+  taskRun    TaskRun  @relation(fields: [taskRunId], references: [id], onDelete: Cascade)
+}
+
+model Artifact {
+  id           String   @id @default(cuid())
+  taskRunId    String
+  artifactType String
+  title        String
+  filePath     String
+  metadataJson String?
+  createdAt    DateTime @default(now())
+  taskRun      TaskRun  @relation(fields: [taskRunId], references: [id], onDelete: Cascade)
+}
+
+model Approval {
+  id              String   @id @default(cuid())
+  taskId           String
+  approvalType     String
+  requestedReason  String
+  status           String
+  decidedBy        String?
+  decidedAt        DateTime?
+  task             Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+}
+
+model IntakeJob {
+  id          String   @id
+  projectId    String?
+  kind        String
+  status      String
+  inputJson   String
+  resultJson  String?
+  error       String?
+  logsJson    String?
+  startedAt   DateTime @default(now())
+  finishedAt  DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  project     Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+}

@@ -1,0 +1,36 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "strict": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "forceConsistentCasingInFileNames": true,
+    "baseUrl": ".",
+    "paths": {
+      "@forgeflow/core": [
+        "packages/core/src"
+      ],
+      "@forgeflow/task-parser": [
+        "packages/task-parser/src"
+      ],
+      "@forgeflow/task-writeback": [
+        "packages/task-writeback/src"
+      ],
+      "@forgeflow/prompts": [
+        "packages/prompts/src"
+      ],
+      "@forgeflow/opencode-adapter": [
+        "packages/opencode-adapter/src"
+      ],
+      "@forgeflow/db": [
+        "packages/db/src"
+      ]
+    }
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "name": "@forgeflow/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx watch src/server.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "node dist/server.js"
+  },
+  "dependencies": {
+    "@fastify/cors": "^11.1.0",
+    "@forgeflow/core": "workspace:*",
+    "@forgeflow/db": "workspace:*",
+    "@forgeflow/opencode-adapter": "workspace:*",
+    "@forgeflow/prompts": "workspace:*",
+    "@forgeflow/task-parser": "workspace:*",
+    "@forgeflow/task-writeback": "workspace:*",
+    "dotenv": "^16.5.0",
+    "execa": "^9.6.0",
+    "fastify": "^5.3.3",
+    "node-pty": "^1.1.0",
+    "zod": "^3.24.4"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.17",
+    "tsx": "^4.19.4"
+  }
+}

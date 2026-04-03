@@ -1,0 +1,16 @@
+node_modules
+.turbo
+.next
+dist
+coverage
+*.log
+.env
+prisma/dev.db
+prisma/dev.db-journal
+*.sqlite
+*.sqlite-journal
+*.tsbuildinfo
+.forgeflow
+apps/**/.next
+apps/**/dist
+packages/**/dist
