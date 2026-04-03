@@ -51,18 +51,26 @@
     <rect x="784" y="312" width="424" height="210" rx="24" fill="url(#card)" stroke="#24415F"/>
   </g>
 
-  <text x="116" y="160" fill="#7DD3FC" font-family="Segoe UI, Arial, sans-serif" font-size="18" letter-spacing="3">LOCAL-FIRST MULTI-AGENT ORCHESTRATION</text>
+  <text x="116" y="160" fill="#7DD3FC" font-family="Segoe UI, Arial, sans-serif" font-size="18" letter-spacing="2.4">LOCAL-FIRST MULTI-AGENT ORCHESTRATION</text>
   <text x="116" y="236" fill="#F8FAFC" font-family="Segoe UI, Arial, sans-serif" font-size="72" font-weight="700">ForgeFlow</text>
-  <text x="116" y="292" fill="#C7D2FE" font-family="Segoe UI, Arial, sans-serif" font-size="30">Import repositories. Build project memory. Execute safely.</text>
-  <text x="116" y="352" fill="#93C5FD" font-family="Segoe UI, Arial, sans-serif" font-size="22">Intake • Memory • Planner • Coder • Reviewer • Tester • Debugger</text>
+
+  <text x="116" y="286" fill="#C7D2FE" font-family="Segoe UI, Arial, sans-serif" font-size="28" font-weight="500">
+    <tspan x="116" dy="0">Import repositories. Build project memory.</tspan>
+    <tspan x="116" dy="34">Execute safely.</tspan>
+  </text>
+
+  <text x="116" y="368" fill="#93C5FD" font-family="Segoe UI, Arial, sans-serif" font-size="20" font-weight="600">
+    <tspan x="116" dy="0">Intake / Memory / Planner / Coder</tspan>
+    <tspan x="116" dy="28">Reviewer / Tester / Debugger</tspan>
+  </text>
 
   <g>
-    <rect x="116" y="404" width="172" height="44" rx="22" fill="#61D9B8" fill-opacity="0.14" stroke="#61D9B8"/>
-    <text x="142" y="432" fill="#D1FAE5" font-family="Segoe UI, Arial, sans-serif" font-size="19" font-weight="600">Persistent Intake Jobs</text>
-    <rect x="300" y="404" width="164" height="44" rx="22" fill="#4C8DFF" fill-opacity="0.14" stroke="#4C8DFF"/>
-    <text x="329" y="432" fill="#DBEAFE" font-family="Segoe UI, Arial, sans-serif" font-size="19" font-weight="600">Run Audit Trails</text>
-    <rect x="476" y="404" width="174" height="44" rx="22" fill="#F59E0B" fill-opacity="0.14" stroke="#F59E0B"/>
-    <text x="506" y="432" fill="#FEF3C7" font-family="Segoe UI, Arial, sans-serif" font-size="19" font-weight="600">Safe Writeback</text>
+    <rect x="116" y="430" width="188" height="44" rx="22" fill="#61D9B8" fill-opacity="0.14" stroke="#61D9B8"/>
+    <text x="210" y="458" text-anchor="middle" fill="#D1FAE5" font-family="Segoe UI, Arial, sans-serif" font-size="16" font-weight="700">Persistent Intake Jobs</text>
+    <rect x="320" y="430" width="172" height="44" rx="22" fill="#4C8DFF" fill-opacity="0.14" stroke="#4C8DFF"/>
+    <text x="406" y="458" text-anchor="middle" fill="#DBEAFE" font-family="Segoe UI, Arial, sans-serif" font-size="16" font-weight="700">Run Audit Trails</text>
+    <rect x="508" y="430" width="156" height="44" rx="22" fill="#F59E0B" fill-opacity="0.14" stroke="#F59E0B"/>
+    <text x="586" y="458" text-anchor="middle" fill="#FEF3C7" font-family="Segoe UI, Arial, sans-serif" font-size="16" font-weight="700">Safe Writeback</text>
   </g>
 
   <text x="820" y="162" fill="#D1FAE5" font-family="Segoe UI, Arial, sans-serif" font-size="20" font-weight="700">Intake Surface</text>
