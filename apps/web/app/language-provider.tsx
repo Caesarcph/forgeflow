@@ -12,6 +12,12 @@ type LanguageContextValue = {
 
 const LanguageContext = createContext<LanguageContextValue | null>(null);
 
+function persistLanguage(language: Language) {
+  document.documentElement.lang = language === "zh" ? "zh-CN" : "en";
+  document.cookie = `${LANGUAGE_COOKIE_NAME}=${language}; path=/; max-age=31536000; samesite=lax`;
+  window.localStorage.setItem(LANGUAGE_COOKIE_NAME, language);
+}
+
 export function LanguageProvider({
   children,
   initialLanguage,
@@ -22,9 +28,7 @@ export function LanguageProvider({
   const [language, setLanguageState] = useState<Language>(initialLanguage);
 
   useEffect(() => {
-    document.documentElement.lang = language === "zh" ? "zh-CN" : "en";
-    document.cookie = `${LANGUAGE_COOKIE_NAME}=${language}; path=/; max-age=31536000; samesite=lax`;
-    window.localStorage.setItem(LANGUAGE_COOKIE_NAME, language);
+    persistLanguage(language);
   }, [language]);
 
   useEffect(() => {
@@ -32,6 +36,7 @@ export function LanguageProvider({
     const nextLanguage = resolveLanguage(saved);
 
     if (saved && nextLanguage !== language) {
+      persistLanguage(nextLanguage);
       setLanguageState(nextLanguage);
     }
   }, [language]);
@@ -39,7 +44,10 @@ export function LanguageProvider({
   const value = useMemo<LanguageContextValue>(
     () => ({
       language,
-      setLanguage: setLanguageState,
+      setLanguage: (nextLanguage) => {
+        persistLanguage(nextLanguage);
+        setLanguageState(nextLanguage);
+      },
     }),
     [language],
   );
