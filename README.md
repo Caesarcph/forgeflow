@@ -1,27 +1,69 @@
 # ForgeFlow
 
+<p align="right">
+  <a href="./README.md"><strong>English</strong></a> |
+  <a href="./README.zh-CN.md"><strong>简体中文</strong></a>
+</p>
+
+<p align="center">
+  <img src="./docs/assets/forgeflow-banner.svg" alt="ForgeFlow banner" width="100%" />
+</p>
+
+<p align="center">
+  <a href="https://github.com/Caesarcph/forgeflow/blob/main/LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-0f172a.svg?style=for-the-badge"></a>
+  <img alt="Status: Alpha" src="https://img.shields.io/badge/status-alpha-c2410c.svg?style=for-the-badge">
+  <img alt="Local First" src="https://img.shields.io/badge/local--first-yes-0f766e.svg?style=for-the-badge">
+  <img alt="Monorepo" src="https://img.shields.io/badge/monorepo-pnpm-1d4ed8.svg?style=for-the-badge">
+</p>
+
 ForgeFlow is a local-first multi-agent software delivery orchestrator.
 
-It helps you do two things:
+It helps you import an existing codebase or start a new one, build a structured memory layer around docs and task sources, then run work through a staged agent execution graph with guardrails, audit artifacts, and rollback support.
 
-1. Import an existing repository, understand its docs and TODO sources, build a memory layer, then execute tasks through a staged agent pipeline.
-2. Start a new project from an idea, brainstorm the initial plan, generate starter files, confirm the scope, then run the same execution loop.
+## Why ForgeFlow
 
-ForgeFlow is currently an alpha-quality developer tool intended for local use and internal testing, not a public multi-tenant SaaS.
+ForgeFlow is built for a practical problem: real projects do not start from a blank prompt.
 
-## What It Does
+They start from:
 
-- Intake for existing repositories with model-assisted or heuristic-only analysis
-- New-project drafting from an idea, including starter docs and TODO generation
-- Persistent intake jobs with live logs and cancellation
-- Editable project memory injected into later agent execution
-- Multi-stage orchestration with `planner -> coder -> reviewer -> tester -> debugger`
-- Retry, recovery, fallback model execution, and run-level audit trails
-- Workspace isolation, path boundaries, dangerous-command blocking, git diff capture, and rollback
+- a repository with uneven docs
+- one or more TODO files
+- historical planning notes
+- commands that can break things
+- partial context spread across Markdown
 
-## Product Shape
+ForgeFlow turns that mess into a controllable workflow:
 
-ForgeFlow is built as a monorepo:
+- intake and project understanding
+- persistent project memory
+- staged agent execution
+- run-level audit trails
+- isolated workspaces
+- safe writeback and rollback
+
+## Visual Overview
+
+<p align="center">
+  <img src="./docs/assets/forgeflow-architecture.svg" alt="ForgeFlow architecture overview" width="100%" />
+</p>
+
+<p align="center">
+  <img src="./docs/assets/forgeflow-execution.svg" alt="ForgeFlow execution flow" width="100%" />
+</p>
+
+## Core Capabilities
+
+| Capability | What it means |
+| --- | --- |
+| Existing-project intake | Import a repo, resolve TODO sources, summarize docs, and build project memory |
+| New-project drafting | Start from an idea, generate starter docs, then confirm before execution |
+| Persistent intake jobs | Long-running import and brainstorming jobs survive UI refreshes and support cancellation |
+| Project memory | Primary docs, plans, future ideas, and TODO context are editable and injected later |
+| Multi-stage orchestration | `planner -> coder -> reviewer -> tester -> debugger` with retries and recovery |
+| Safe execution | Path boundaries, blocked commands, isolated workspaces, diff capture, and rollback |
+| Auditability | Prompt artifacts, raw model output, stdout, stderr, git diff, and changed files per run |
+
+## Monorepo Layout
 
 ```text
 apps/
@@ -35,6 +77,7 @@ packages/
   task-parser/         Markdown task parser
   task-writeback/      checkbox writeback
 docs/
+  assets/
   troubleshooting.md
   known-issues.md
   release-readiness-checklist.md
@@ -45,34 +88,40 @@ tests/
 
 ## Current Status
 
+ForgeFlow is currently an alpha-quality local developer tool.
+
 What is already in place:
 
-- persistent intake jobs
-- live intake logging and cancellation
-- health checks for CLI / provider / model roundtrip
-- project memory persistence and editing
-- run audit artifacts, prompts, raw output, git diff, and rollback data
-- execution boundary enforcement and isolated workspaces
+- existing-project and new-project intake
+- persistent intake jobs with live logs
+- PTY-backed local CLI health checks
+- editable project memory
+- staged execution with reviewer and debugger
+- retries, recovery, fallback models, and run audit artifacts
+- isolated execution workspaces
+- git diff capture and rollback
 
 What is still alpha:
 
-- local OpenCode CLI behavior varies by model and agent mode
-- UI polish is improving but still uneven in deeper flows
-- end-to-end automation coverage is not complete yet
-- release packaging for non-developer users is not done yet
+- some OpenCode model and agent combinations still vary in structured-output reliability
+- UI consistency is improving, but a few deeper flows still need cleanup
+- packaging for non-developer desktop use is not finished
+- broader end-to-end regression coverage is still being expanded
 
-## Requirements
+## Quick Start
+
+### Requirements
 
 - Node.js 22+
 - pnpm 10+
 - SQLite through Prisma
-- OpenCode CLI installed locally if you want direct CLI execution
+- OpenCode CLI installed locally if you want direct local execution
 
 Optional:
 
-- an OpenCode-compatible HTTP executor if you prefer remote execution through `OPENCODE_BASE_URL`
+- an OpenCode-compatible HTTP executor via `OPENCODE_BASE_URL`
 
-## Quick Start
+### Install
 
 ```powershell
 pnpm install
@@ -88,74 +137,46 @@ Default local addresses:
 
 ## Environment
 
-The example file lives at [`.env.example`](D:/Opencode_Orch/.env.example).
+See [`.env.example`](./.env.example).
 
 Important variables:
 
 - `DATABASE_URL`
-  Prisma / SQLite connection string
 - `PORT`
-  API port, default `4010`
 - `NEXT_PUBLIC_API_BASE_URL`
-  browser-facing API base, default `http://127.0.0.1:4010`
 - `OPENCODE_BASE_URL`
-  optional HTTP executor base URL
 - `OPENCODE_API_KEY`
-  optional token for the HTTP executor
 - `OPENCODE_CLI_PATH`
-  explicit local OpenCode CLI path when Windows path discovery is not enough
 - `OPENCODE_CLI_TIMEOUT_MS`
-  max time for agent execution via local CLI
 - `OPENCODE_INTAKE_TIMEOUT_MS`
-  max time for intake refinement before timeout / fallback
 - `OPENCODE_HEALTHCHECK_TIMEOUT_MS`
-  timeout for the lightweight intake health check
 
-## Using The UI
+## Typical Workflow
 
-1. Run `pnpm dev`
-2. Open `http://localhost:3000`
-3. Check the startup diagnostics panel if this is your first run
-4. Choose either:
-   - `New Project`
-   - `Existing Project`
+### Existing Project
 
-### Existing Project Flow
-
-Use this when you already have a codebase and supporting docs.
-
-Typical flow:
-
-1. Enter the workspace root
-2. Choose intake strategy:
+1. Open ForgeFlow.
+2. Run startup diagnostics if this is the first launch.
+3. Choose `Existing Project`.
+4. Enter the workspace root.
+5. Choose intake strategy:
    - `Model Refine`
    - `Heuristic Only`
-3. Optionally run model health check
-4. Click `Inspect / Refine Import`
-5. Review:
-   - resolved work path
-   - TODO source
-   - primary reference doc
-   - completed / future / plan docs
-   - scripts
-   - workspace layout
-6. Confirm import
+6. Optionally run model health checks.
+7. Click `Inspect / Refine Import`.
+8. Review resolved paths, TODO source, docs, scripts, and workspace layout.
+9. Confirm import.
+10. Run tasks from the project detail page.
 
-ForgeFlow can now resolve index-style TODO files and follow linked Markdown task sources automatically.
+### New Project
 
-### New Project Flow
-
-Use this when the repo does not exist yet or is only a rough idea.
-
-Typical flow:
-
-1. Enter target root path
-2. Enter project name and idea
-3. Add follow-up constraints if needed
-4. Choose intake strategy
-5. Click `Generate / Refine Draft`
-6. Review starter files and suggested config
-7. Confirm creation
+1. Choose `New Project`.
+2. Enter the target root path.
+3. Add project name and idea.
+4. Add follow-up constraints if needed.
+5. Click `Generate / Refine Draft`.
+6. Review the generated starter files and project shape.
+7. Confirm project creation.
 
 Typical starter files:
 
@@ -166,7 +187,7 @@ Typical starter files:
 
 ## Execution Model
 
-Imported or created projects move through a staged execution graph:
+ForgeFlow runs project work through a staged graph:
 
 ```text
 planning -> coding -> reviewing -> testing
@@ -174,40 +195,37 @@ planning -> coding -> reviewing -> testing
                       +--> debugging +
 ```
 
-Current execution behavior includes:
+Execution behavior includes:
 
-- state-machine-driven progression
-- retry with backoff per stage
-- explicit recovery actions from planner / coder / tester
-- reviewer and debugger in the real execution graph
+- state-machine-driven transitions
+- stage retries with backoff
+- explicit recovery from planner, coder, or tester
+- reviewer and debugger in the live path
 - fallback model execution
-- isolated execution workspaces
-- path and shell safety checks
-- git diff capture and rollback artifacts
+- isolated workspaces before syncing changes back
+- dangerous-command blocking
+- changed-file validation against allowed and blocked paths
+- git-aware diff capture and rollback artifacts
 
-## Local CLI vs HTTP Executor
+## Local CLI and HTTP Executor
 
-ForgeFlow supports two execution modes:
+ForgeFlow supports two execution modes.
 
 ### Local OpenCode CLI
 
-If `OPENCODE_BASE_URL` is empty, ForgeFlow will use the locally installed OpenCode CLI.
+If `OPENCODE_BASE_URL` is empty, ForgeFlow uses the locally installed OpenCode CLI.
 
-This is the easiest setup for local experimentation, but model behavior can vary depending on:
-
-- provider
-- model
-- whether the selected OpenCode agent tends to explore or answer directly
+This is the easiest mode for local experimentation.
 
 ### HTTP Executor
 
-If `OPENCODE_BASE_URL` is set, ForgeFlow sends execution requests to an OpenCode-compatible HTTP service.
+If `OPENCODE_BASE_URL` is set, ForgeFlow sends execution requests to an OpenCode-compatible HTTP executor.
 
-This is useful when you want:
+This is useful if you want:
 
-- a more stable execution wrapper
-- centralized model credentials
-- remote execution outside the local machine
+- centralized credentials
+- remote execution
+- a more controlled execution wrapper than local CLI behavior
 
 ## Useful Commands
 
@@ -222,15 +240,15 @@ pnpm db:generate
 
 ## Tests
 
-The current repo includes focused unit and regression coverage for:
+The repository currently includes focused unit and regression coverage for:
 
 - intake heuristics
 - intake job state transitions
+- project memory
 - execution boundaries
 - fallback model execution
-- project memory
 - task writeback
-- core state machine behavior
+- state machine behavior
 
 Run them with:
 
@@ -238,36 +256,21 @@ Run them with:
 pnpm test:unit
 ```
 
-## Open Source Notes
+## Docs
 
-This repository is prepared as a public local-developer tool.
+- [Troubleshooting](./docs/troubleshooting.md)
+- [Known Issues](./docs/known-issues.md)
+- [Release Readiness Checklist](./docs/release-readiness-checklist.md)
+- [Release Checklist](./docs/release-checklist.md)
+- [Roadmap TODO](./TODO.md)
 
-Recommended expectations for contributors:
+## Contributing
 
-- treat local safety and auditability as first-class concerns
-- keep execution boundaries explicit
-- prefer deterministic fallbacks over silent failure
-- keep docs in sync with behavior
+This repository is prepared as a public local-developer tool. Contributions should keep safety, auditability, and deterministic fallbacks as first-class concerns.
 
-See:
-
-- [CONTRIBUTING.md](D:/Opencode_Orch/CONTRIBUTING.md)
-- [CODE_OF_CONDUCT.md](D:/Opencode_Orch/CODE_OF_CONDUCT.md)
-- [LICENSE](D:/Opencode_Orch/LICENSE)
-
-## Troubleshooting And Release Docs
-
-- [docs/troubleshooting.md](D:/Opencode_Orch/docs/troubleshooting.md)
-- [docs/known-issues.md](D:/Opencode_Orch/docs/known-issues.md)
-- [docs/release-readiness-checklist.md](D:/Opencode_Orch/docs/release-readiness-checklist.md)
-- [docs/release-checklist.md](D:/Opencode_Orch/docs/release-checklist.md)
-
-## Roadmap
-
-The main roadmap and readiness backlog currently live in:
-
-- [TODO.md](D:/Opencode_Orch/TODO.md)
-- [docs/release-readiness-checklist.md](D:/Opencode_Orch/docs/release-readiness-checklist.md)
+- [Contributing Guide](./CONTRIBUTING.md)
+- [Code of Conduct](./CODE_OF_CONDUCT.md)
+- [License](./LICENSE)
 
 ## License
 

@@ -1,0 +1,50 @@
+<svg width="1280" height="520" viewBox="0 0 1280 520" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1280" y2="520" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#09121E"/>
+      <stop offset="1" stop-color="#11253A"/>
+    </linearGradient>
+    <linearGradient id="step" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#13243A"/>
+      <stop offset="1" stop-color="#0A1628"/>
+    </linearGradient>
+    <marker id="arrow" markerWidth="14" markerHeight="14" refX="10" refY="7" orient="auto">
+      <path d="M0 0L14 7L0 14V0Z" fill="#7DD3FC"/>
+    </marker>
+  </defs>
+
+  <rect width="1280" height="520" rx="28" fill="url(#bg)"/>
+
+  <text x="70" y="72" fill="#F8FAFC" font-family="Segoe UI, Arial, sans-serif" font-size="34" font-weight="700">Execution Graph</text>
+  <text x="70" y="106" fill="#93C5FD" font-family="Segoe UI, Arial, sans-serif" font-size="18">The live task path currently implemented in ForgeFlow.</text>
+
+  <rect x="72" y="186" width="170" height="110" rx="20" fill="url(#step)" stroke="#24415F"/>
+  <rect x="286" y="186" width="170" height="110" rx="20" fill="url(#step)" stroke="#24415F"/>
+  <rect x="500" y="186" width="170" height="110" rx="20" fill="url(#step)" stroke="#24415F"/>
+  <rect x="714" y="186" width="170" height="110" rx="20" fill="url(#step)" stroke="#24415F"/>
+  <rect x="928" y="186" width="170" height="110" rx="20" fill="url(#step)" stroke="#24415F"/>
+
+  <text x="116" y="230" fill="#D1FAE5" font-family="Segoe UI, Arial, sans-serif" font-size="23" font-weight="700">Planning</text>
+  <text x="330" y="230" fill="#DBEAFE" font-family="Segoe UI, Arial, sans-serif" font-size="23" font-weight="700">Coding</text>
+  <text x="530" y="230" fill="#FEF3C7" font-family="Segoe UI, Arial, sans-serif" font-size="23" font-weight="700">Reviewing</text>
+  <text x="755" y="230" fill="#FDE68A" font-family="Segoe UI, Arial, sans-serif" font-size="23" font-weight="700">Testing</text>
+  <text x="959" y="230" fill="#FECACA" font-family="Segoe UI, Arial, sans-serif" font-size="23" font-weight="700">Debugging</text>
+
+  <text x="108" y="262" fill="#E2E8F0" font-family="Segoe UI, Arial, sans-serif" font-size="15">Task plan</text>
+  <text x="325" y="262" fill="#E2E8F0" font-family="Segoe UI, Arial, sans-serif" font-size="15">Implementation</text>
+  <text x="534" y="262" fill="#E2E8F0" font-family="Segoe UI, Arial, sans-serif" font-size="15">Pass / fail</text>
+  <text x="751" y="262" fill="#E2E8F0" font-family="Segoe UI, Arial, sans-serif" font-size="15">Command validation</text>
+  <text x="966" y="262" fill="#E2E8F0" font-family="Segoe UI, Arial, sans-serif" font-size="15">Cause + next actions</text>
+
+  <path d="M242 241H274" stroke="#7DD3FC" stroke-width="4" marker-end="url(#arrow)"/>
+  <path d="M456 241H488" stroke="#7DD3FC" stroke-width="4" marker-end="url(#arrow)"/>
+  <path d="M670 241H702" stroke="#7DD3FC" stroke-width="4" marker-end="url(#arrow)"/>
+
+  <path d="M585 296V376H1013V308" stroke="#FCA5A5" stroke-width="4" marker-end="url(#arrow)"/>
+  <path d="M799 296V412H1013V308" stroke="#F59E0B" stroke-width="4" marker-end="url(#arrow)"/>
+  <path d="M1013 296V444H371V308" stroke="#60A5FA" stroke-width="4" marker-end="url(#arrow)"/>
+
+  <text x="566" y="398" fill="#FECACA" font-family="Segoe UI, Arial, sans-serif" font-size="16">Review fail</text>
+  <text x="783" y="434" fill="#FDE68A" font-family="Segoe UI, Arial, sans-serif" font-size="16">Test fail</text>
+  <text x="623" y="474" fill="#BFDBFE" font-family="Segoe UI, Arial, sans-serif" font-size="16">Debugger returns control to coding</text>
+</svg>
