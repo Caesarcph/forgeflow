@@ -16,6 +16,9 @@ model Project {
   doneProgressFilePath String?
   futureFilePath       String?
   implementationPlanFilePath String?
+  designBriefFilePath        String?
+  interactionRulesFilePath   String?
+  visualReferencesFilePath   String?
   referenceDocsJson    String?
   todoProgressFilePath String
   buildCommand         String?
@@ -25,6 +28,7 @@ model Project {
   allowedPathsJson     String?
   blockedPathsJson     String?
   defaultBranch        String?
+  intakeEngine         String?
   autoRunEnabled       Boolean       @default(false)
   memorySummaryJson    String?
   memorySourcesJson    String?

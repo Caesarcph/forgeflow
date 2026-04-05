@@ -16,8 +16,8 @@ const envSchema = z.object({
   OPENCODE_BASE_URL: z.string().optional(),
   OPENCODE_API_KEY: z.string().optional(),
   OPENCODE_CLI_PATH: z.string().optional(),
-  OPENCODE_CLI_TIMEOUT_MS: z.coerce.number().default(600000),
-  OPENCODE_INTAKE_TIMEOUT_MS: z.coerce.number().default(900000),
+  OPENCODE_CLI_TIMEOUT_MS: z.coerce.number().default(3600000),
+  OPENCODE_INTAKE_TIMEOUT_MS: z.coerce.number().default(3600000),
   OPENCODE_HEALTHCHECK_TIMEOUT_MS: z.coerce.number().default(30000),
 });
 

@@ -7,6 +7,9 @@ type ProjectMemoryProject = {
   doneProgressFilePath: string | null;
   futureFilePath: string | null;
   implementationPlanFilePath: string | null;
+  designBriefFilePath: string | null;
+  interactionRulesFilePath: string | null;
+  visualReferencesFilePath: string | null;
   todoProgressFilePath: string;
   referenceDocs: string[];
   memorySummaryJson?: string | null;
@@ -16,7 +19,7 @@ type ProjectMemoryProject = {
 };
 
 export interface ProjectMemorySource {
-  kind: "primary" | "completed" | "future" | "plan" | "todo" | "reference";
+  kind: "primary" | "completed" | "future" | "plan" | "todo" | "reference" | "design_brief" | "interaction_rules" | "visual_references";
   label: string;
   path: string;
   snippet: string;
@@ -123,6 +126,30 @@ export async function buildProjectMemorySnapshot(
     return persisted;
   }
 
+  const designCandidates: Array<Omit<ProjectMemorySource, "snippet">> = [
+    project.designBriefFilePath
+      ? {
+          kind: "design_brief",
+          label: "UI brief",
+          path: project.designBriefFilePath,
+        }
+      : null,
+    project.interactionRulesFilePath
+      ? {
+          kind: "interaction_rules",
+          label: "Interaction rules",
+          path: project.interactionRulesFilePath,
+        }
+      : null,
+    project.visualReferencesFilePath
+      ? {
+          kind: "visual_references",
+          label: "Visual references",
+          path: project.visualReferencesFilePath,
+        }
+      : null,
+  ].filter((entry): entry is Omit<ProjectMemorySource, "snippet"> => Boolean(entry));
+
   const candidates: Array<Omit<ProjectMemorySource, "snippet">> = [
     project.introFilePath
       ? {
@@ -159,11 +186,12 @@ export async function buildProjectMemorySnapshot(
           path: project.todoProgressFilePath,
         }
       : null,
-    ...project.referenceDocs.slice(0, 4).map((filePath) => ({
+    ...project.referenceDocs.map((filePath) => ({
       kind: "reference" as const,
       label: "Extra reference doc",
       path: filePath,
     })),
+    ...designCandidates,
   ].filter((entry): entry is Omit<ProjectMemorySource, "snippet"> => Boolean(entry));
 
   const sources = (

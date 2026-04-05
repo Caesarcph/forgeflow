@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import type { AgentConfig } from "../../../lib/api";
 import { CLIENT_API_BASE_URL } from "../../../lib/client-api";
@@ -10,6 +10,8 @@ import { PROVIDER_PRESETS, getDefaultModelForProvider, getProviderModels } from 
 import { useLanguage } from "../../language-provider";
 
 const API_BASE_URL = CLIENT_API_BASE_URL;
+const MIN_TEMPERATURE = 0;
+const MAX_TEMPERATURE = 2;
 
 interface DraftAgentConfig {
   enabled: boolean;
@@ -35,56 +37,83 @@ function toDraft(agent: AgentConfig): DraftAgentConfig {
   };
 }
 
+function getText(language: "en" | "zh") {
+  if (language === "zh") {
+    return {
+      idle: "可以在这里修改 provider、model、fallback 和执行权限。",
+      saving: (roleName: string) => `正在保存 ${roleName} 配置...`,
+      saved: (roleName: string) => `${roleName} 配置已保存。`,
+      saveFailed: "保存 Agent 配置失败",
+      current: "当前",
+      presetProvider: "预设 Provider",
+      presetModel: "预设 Model",
+      customModel: "自定义模型 ID",
+      provider: "Provider",
+      model: "Model",
+      fallback: "Fallback",
+      optional: "可选",
+      temperatureMaxTokens: "Temperature / Max Tokens",
+      limits: `Temperature ${MIN_TEMPERATURE}-${MAX_TEMPERATURE}，Max Tokens 必须是正整数`,
+      providerRequired: "Provider 不能为空",
+      modelRequired: "Model 不能为空",
+      temperatureHint: `Temperature 必须在 ${MIN_TEMPERATURE}-${MAX_TEMPERATURE} 之间`,
+      maxTokensHint: "Max Tokens 必须是正整数",
+      enabled: "启用",
+      writeFiles: "允许写文件",
+      runCommands: "允许跑命令",
+      savingShort: "保存中...",
+      saveConfig: "保存配置",
+    };
+  }
+
+  return {
+    idle: "Change provider, model, fallback, and execution permissions here.",
+    saving: (roleName: string) => `Saving ${roleName} settings...`,
+    saved: (roleName: string) => `${roleName} settings saved.`,
+    saveFailed: "Failed to save agent config",
+    current: "Current",
+    presetProvider: "Preset Provider",
+    presetModel: "Preset Model",
+    customModel: "Custom model id",
+    provider: "Provider",
+    model: "Model",
+    fallback: "Fallback",
+    optional: "Optional",
+    temperatureMaxTokens: "Temperature / Max Tokens",
+    limits: `Temperature ${MIN_TEMPERATURE}-${MAX_TEMPERATURE}, Max Tokens must be a positive integer`,
+    providerRequired: "Provider is required",
+    modelRequired: "Model is required",
+    temperatureHint: `Temperature must be between ${MIN_TEMPERATURE} and ${MAX_TEMPERATURE}`,
+    maxTokensHint: "Max Tokens must be a positive integer",
+    enabled: "enabled",
+    writeFiles: "write files",
+    runCommands: "run commands",
+    savingShort: "Saving...",
+    saveConfig: "Save Config",
+  };
+}
+
 export function AgentConfigPanel({ projectId, agents }: { projectId: string; agents: AgentConfig[] }) {
   const { language } = useLanguage();
   const router = useRouter();
+  const text = getText(language);
+  const [savedAgents, setSavedAgents] = useState<Record<string, AgentConfig>>(
+    Object.fromEntries(agents.map((agent) => [agent.roleName, agent])),
+  );
   const [drafts, setDrafts] = useState<Record<string, DraftAgentConfig>>(
     Object.fromEntries(agents.map((agent) => [agent.roleName, toDraft(agent)])),
   );
   const [pendingRole, setPendingRole] = useState<string | null>(null);
-  const text =
-    language === "zh"
-      ? {
-          idle: "可以在这里修改 provider、model、fallback 和执行权限。",
-          saving: (roleName: string) => `正在保存 ${roleName} 设置...`,
-          saved: (roleName: string) => `${roleName} 设置已保存。`,
-          saveFailed: "保存 Agent 配置失败",
-          current: "当前",
-          presetProvider: "预设 Provider",
-          presetModel: "预设 Model",
-          customModel: "自定义模型 ID",
-          provider: "Provider",
-          model: "Model",
-          fallback: "Fallback",
-          optional: "可选",
-          temperatureMaxTokens: "Temperature / Max Tokens",
-          enabled: "启用",
-          writeFiles: "允许写文件",
-          runCommands: "允许跑命令",
-          savingShort: "保存中...",
-          saveConfig: "保存配置",
-        }
-      : {
-          idle: "Change provider, model, fallback, and execution permissions here.",
-          saving: (roleName: string) => `Saving ${roleName} settings...`,
-          saved: (roleName: string) => `${roleName} settings saved.`,
-          saveFailed: "Failed to save agent config",
-          current: "Current",
-          presetProvider: "Preset Provider",
-          presetModel: "Preset Model",
-          customModel: "Custom model id",
-          provider: "Provider",
-          model: "Model",
-          fallback: "Fallback",
-          optional: "Optional",
-          temperatureMaxTokens: "Temperature / Max Tokens",
-          enabled: "enabled",
-          writeFiles: "write files",
-          runCommands: "run commands",
-          savingShort: "Saving...",
-          saveConfig: "Save Config",
-        };
   const [message, setMessage] = useState(text.idle);
+
+  useEffect(() => {
+    setSavedAgents(Object.fromEntries(agents.map((agent) => [agent.roleName, agent])));
+    setDrafts(Object.fromEntries(agents.map((agent) => [agent.roleName, toDraft(agent)])));
+  }, [agents]);
+
+  useEffect(() => {
+    setMessage(text.idle);
+  }, [text.idle]);
 
   function updateDraft(roleName: string, patch: Partial<DraftAgentConfig>) {
     setDrafts((current) => ({
@@ -107,6 +136,31 @@ export function AgentConfigPanel({ projectId, agents }: { projectId: string; age
 
   async function saveAgent(roleName: string) {
     const draft = drafts[roleName];
+    const provider = draft.provider.trim();
+    const model = draft.model.trim();
+    const temperature = Number(draft.temperature);
+    const maxTokens = Number(draft.maxTokens);
+
+    if (!provider) {
+      setMessage(text.providerRequired);
+      return;
+    }
+
+    if (!model) {
+      setMessage(text.modelRequired);
+      return;
+    }
+
+    if (!Number.isFinite(temperature) || temperature < MIN_TEMPERATURE || temperature > MAX_TEMPERATURE) {
+      setMessage(text.temperatureHint);
+      return;
+    }
+
+    if (!Number.isInteger(maxTokens) || maxTokens < 1) {
+      setMessage(text.maxTokensHint);
+      return;
+    }
+
     setPendingRole(roleName);
     setMessage(text.saving(roleName));
 
@@ -118,20 +172,29 @@ export function AgentConfigPanel({ projectId, agents }: { projectId: string; age
         },
         body: JSON.stringify({
           enabled: draft.enabled,
-          provider: draft.provider,
-          model: draft.model,
-          fallbackModel: draft.fallbackModel || null,
-          temperature: Number(draft.temperature),
-          maxTokens: Number(draft.maxTokens),
+          provider,
+          model,
+          fallbackModel: draft.fallbackModel.trim() || null,
+          temperature,
+          maxTokens,
           canWriteFiles: draft.canWriteFiles,
           canRunCommands: draft.canRunCommands,
         }),
       });
 
-      const payload = await parseJsonResponse<{ error?: string; message?: string }>(response);
+      const payload = await parseJsonResponse<{ agent?: AgentConfig; error?: string; message?: string }>(response);
 
       if (!response.ok) {
-        throw new Error(readApiError(payload, "Failed to save agent config"));
+        throw new Error(readApiError(payload, text.saveFailed));
+      }
+
+      const updatedAgent = payload.agent;
+
+      if (updatedAgent) {
+        setSavedAgents((current) => ({
+          ...current,
+          [roleName]: updatedAgent,
+        }));
       }
 
       setMessage(text.saved(roleName));
@@ -148,6 +211,7 @@ export function AgentConfigPanel({ projectId, agents }: { projectId: string; age
       <div className="feedback">{message}</div>
       {agents.map((agent) => {
         const draft = drafts[agent.roleName];
+        const currentAgent = savedAgents[agent.roleName] ?? agent;
         const busy = pendingRole === agent.roleName;
         const providerModels = getProviderModels(draft.provider);
 
@@ -156,7 +220,7 @@ export function AgentConfigPanel({ projectId, agents }: { projectId: string; age
             <div>
               <strong>{agent.roleName}</strong>
               <div className="muted">
-                {text.current}: {agent.provider} / {agent.model}
+                {text.current}: {currentAgent.provider} / {currentAgent.model}
               </div>
             </div>
 
@@ -201,7 +265,7 @@ export function AgentConfigPanel({ projectId, agents }: { projectId: string; age
                 <input
                   value={draft.model}
                   onChange={(event) => updateDraft(agent.roleName, { model: event.target.value })}
-                  placeholder="mimo-v2-pro-free, z-ai/glm5, gpt-5.4"
+                  placeholder="mimo-v2-pro-free, qwen3.6-plus-free, gpt-5.4"
                 />
               </div>
             </div>
@@ -221,12 +285,15 @@ export function AgentConfigPanel({ projectId, agents }: { projectId: string; age
                   <input
                     value={draft.temperature}
                     onChange={(event) => updateDraft(agent.roleName, { temperature: event.target.value })}
+                    placeholder="0.2"
                   />
                   <input
                     value={draft.maxTokens}
                     onChange={(event) => updateDraft(agent.roleName, { maxTokens: event.target.value })}
+                    placeholder="32000"
                   />
                 </div>
+                <div className="muted">{text.limits}</div>
               </div>
             </div>
 

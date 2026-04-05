@@ -1,4 +1,5 @@
 import { promises as fs } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
 import type { ProjectChangeSet } from "./execution-boundaries.js";
@@ -9,14 +10,20 @@ const SKIPPED_DIRECTORIES = new Set([
   ".git",
   ".next",
   ".turbo",
+  "backups",
   "build",
   "coverage",
   "dist",
   "node_modules",
 ]);
 
+function sanitizeSegment(value: string) {
+  return value.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "") || "workspace";
+}
+
 function workspaceRoot(projectRootPath: string) {
-  return path.join(projectRootPath, ".forgeflow", "workspaces");
+  const projectName = sanitizeSegment(path.basename(projectRootPath));
+  return path.join(os.tmpdir(), "forgeflow-workspaces", projectName);
 }
 
 function shouldSkip(entryPath: string) {
@@ -30,23 +37,34 @@ export async function createExecutionWorkspace(input: {
   stage: string;
 }) {
   const baseDirectory = workspaceRoot(input.projectRootPath);
-  const workspacePath = path.join(baseDirectory, `${input.taskCode}-${input.stage}`);
+  const workspacePath = path.join(baseDirectory, `${sanitizeSegment(input.taskCode)}-${sanitizeSegment(input.stage)}`);
 
   await fs.rm(workspacePath, { recursive: true, force: true });
   await fs.mkdir(workspacePath, { recursive: true });
 
-  await fs.cp(input.projectRootPath, workspacePath, {
-    recursive: true,
-    filter: (source) => {
-      const relativePath = path.relative(input.projectRootPath, source);
+  const entries = await fs.readdir(input.projectRootPath, { withFileTypes: true });
 
-      if (!relativePath) {
-        return true;
-      }
+  for (const entry of entries) {
+    if (SKIPPED_DIRECTORIES.has(entry.name)) {
+      continue;
+    }
 
-      return !shouldSkip(relativePath);
-    },
-  });
+    const sourcePath = path.join(input.projectRootPath, entry.name);
+    const targetPath = path.join(workspacePath, entry.name);
+
+    await fs.cp(sourcePath, targetPath, {
+      recursive: true,
+      filter: (source) => {
+        const relativePath = path.relative(input.projectRootPath, source);
+
+        if (!relativePath) {
+          return true;
+        }
+
+        return !shouldSkip(relativePath);
+      },
+    });
+  }
 
   return workspacePath;
 }

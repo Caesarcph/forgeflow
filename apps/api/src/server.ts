@@ -25,10 +25,20 @@ import {
   rejectTask,
   rollbackRun,
   updateProjectMemory,
+  updateProjectConfig,
   updateAgentConfig,
   writebackTask,
 } from "./lib/project-service.js";
-import { recoverTask, runNextTask, runTask } from "./lib/orchestrator.js";
+import {
+  recoverTask,
+  runNextTask,
+  runTask,
+  startProjectAutopilotInBackground,
+  startProjectExecutionInBackground,
+  stopProjectAutopilot,
+  startTaskExecutionInBackground,
+  startTaskRecoveryInBackground,
+} from "./lib/orchestrator.js";
 import {
   closePtySession,
   createPtySession,
@@ -481,6 +491,23 @@ app.get("/api/projects/:id", async (request, reply) => {
   }
 });
 
+app.patch("/api/projects/:id", async (request, reply) => {
+  const params = z.object({
+    id: z.string(),
+  }).parse(request.params);
+
+  try {
+    return {
+      detail: await updateProjectConfig(params.id, request.body),
+    };
+  } catch (error) {
+    return sendApiError(reply, {
+      statusCode: 400,
+      error: error instanceof Error ? error.message : "Failed to update project configuration",
+    });
+  }
+});
+
 app.patch("/api/projects/:id/memory", async (request, reply) => {
   const params = z.object({
     id: z.string(),
@@ -571,13 +598,41 @@ app.post("/api/projects/:id/start", async (request, reply) => {
   }).parse(request.params);
 
   try {
-    return {
-      run: await runNextTask(params.id),
-    };
+    return reply.code(202).send(startProjectExecutionInBackground(params.id));
   } catch (error) {
     return sendApiError(reply, {
       statusCode: 400,
       error: error instanceof Error ? error.message : "Failed to start next task",
+    });
+  }
+});
+
+app.post("/api/projects/:id/autopilot/start", async (request, reply) => {
+  const params = z.object({
+    id: z.string(),
+  }).parse(request.params);
+
+  try {
+    return reply.code(202).send(await startProjectAutopilotInBackground(params.id));
+  } catch (error) {
+    return sendApiError(reply, {
+      statusCode: 400,
+      error: error instanceof Error ? error.message : "Failed to start autopilot",
+    });
+  }
+});
+
+app.post("/api/projects/:id/autopilot/stop", async (request, reply) => {
+  const params = z.object({
+    id: z.string(),
+  }).parse(request.params);
+
+  try {
+    return await stopProjectAutopilot(params.id);
+  } catch (error) {
+    return sendApiError(reply, {
+      statusCode: 400,
+      error: error instanceof Error ? error.message : "Failed to stop autopilot",
     });
   }
 });
@@ -696,9 +751,7 @@ app.post("/api/tasks/:taskId/run", async (request, reply) => {
   }).parse(request.params);
 
   try {
-    return {
-      run: await runTask(params.taskId),
-    };
+    return reply.code(202).send(startTaskExecutionInBackground(params.taskId, "run"));
   } catch (error) {
     return sendApiError(reply, {
       statusCode: 400,
@@ -713,9 +766,7 @@ app.post("/api/tasks/:taskId/retry", async (request, reply) => {
   }).parse(request.params);
 
   try {
-    return {
-      run: await runTask(params.taskId),
-    };
+    return reply.code(202).send(startTaskExecutionInBackground(params.taskId, "retry"));
   } catch (error) {
     return sendApiError(reply, {
       statusCode: 400,
@@ -730,14 +781,12 @@ app.post("/api/tasks/:taskId/recover", async (request, reply) => {
   }).parse(request.params);
   const body = z
     .object({
-      targetStage: z.enum(["planning", "coding", "testing"]),
+      targetStage: z.enum(["planning", "coding", "testing", "reviewing", "debugging"]),
     })
     .parse(request.body ?? {});
 
   try {
-    return {
-      run: await recoverTask(params.taskId, body.targetStage),
-    };
+    return reply.code(202).send(startTaskRecoveryInBackground(params.taskId, body.targetStage));
   } catch (error) {
     return sendApiError(reply, {
       statusCode: 400,

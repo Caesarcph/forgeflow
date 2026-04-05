@@ -61,7 +61,7 @@ const agentConfigUpdateSchema = z.object({
   model: z.string().min(1).optional(),
   fallbackModel: z.string().nullable().optional(),
   temperature: z.number().min(0).max(2).optional(),
-  maxTokens: z.number().int().positive().max(200000).optional(),
+  maxTokens: z.number().int().positive().optional(),
   canWriteFiles: z.boolean().optional(),
   canRunCommands: z.boolean().optional(),
   systemPromptTemplate: z.string().min(1).optional(),
@@ -410,6 +410,9 @@ export async function createProject(rawInput: unknown) {
     doneProgressFilePath: project.doneProgressFilePath,
     futureFilePath: project.futureFilePath,
     implementationPlanFilePath: project.implementationPlanFilePath,
+    designBriefFilePath: null,
+    interactionRulesFilePath: null,
+    visualReferencesFilePath: null,
     todoProgressFilePath: project.todoProgressFilePath,
     referenceDocs,
   });
@@ -520,6 +523,9 @@ export async function getProjectDetail(projectId: string) {
     doneProgressFilePath: project.doneProgressFilePath,
     futureFilePath: project.futureFilePath,
     implementationPlanFilePath: project.implementationPlanFilePath,
+    designBriefFilePath: null,
+    interactionRulesFilePath: null,
+    visualReferencesFilePath: null,
     todoProgressFilePath: project.todoProgressFilePath,
     referenceDocs: serializedProject.referenceDocs,
     memorySummaryJson: persistedMemoryProject.memorySummaryJson ?? null,
@@ -714,6 +720,9 @@ export async function rebuildProjectMemory(projectId: string) {
     doneProgressFilePath: project.doneProgressFilePath,
     futureFilePath: project.futureFilePath,
     implementationPlanFilePath: project.implementationPlanFilePath,
+    designBriefFilePath: null,
+    interactionRulesFilePath: null,
+    visualReferencesFilePath: null,
     todoProgressFilePath: project.todoProgressFilePath,
     referenceDocs: parseJsonField<string[]>(project.referenceDocsJson, []),
   }, {
@@ -926,6 +935,147 @@ export async function approveTask(taskId: string, summary?: string) {
   });
 
   return getProjectDetail(task.projectId);
+}
+
+const projectConfigUpdateSchema = z.object({
+  name: z.string().min(1).optional(),
+  introFilePath: z.string().optional().nullable(),
+  doneProgressFilePath: z.string().optional().nullable(),
+  futureFilePath: z.string().optional().nullable(),
+  implementationPlanFilePath: z.string().optional().nullable(),
+  referenceDocs: z.array(z.string()).optional(),
+  todoProgressFilePath: z.string().min(1).optional(),
+  buildCommand: z.string().optional().nullable(),
+  testCommand: z.string().optional().nullable(),
+  lintCommand: z.string().optional().nullable(),
+  startCommand: z.string().optional().nullable(),
+  allowedPaths: z.array(z.string()).optional(),
+  blockedPaths: z.array(z.string()).optional(),
+  defaultBranch: z.string().optional().nullable(),
+  autoRunEnabled: z.boolean().optional(),
+});
+
+export async function updateProjectConfig(projectId: string, rawInput: unknown) {
+  const input = projectConfigUpdateSchema.parse(rawInput);
+  const project = await prisma.project.findUniqueOrThrow({
+    where: {
+      id: projectId,
+    },
+  });
+
+  const updateData: Record<string, unknown> = {};
+
+  if (input.name !== undefined) {
+    updateData.name = input.name.trim();
+  }
+
+  if (input.introFilePath !== undefined) {
+    const value = input.introFilePath?.trim() ?? null;
+    if (value) {
+      await assertPathExists(value, "Intro file");
+    }
+    updateData.introFilePath = value;
+  }
+
+  if (input.doneProgressFilePath !== undefined) {
+    const value = input.doneProgressFilePath?.trim() ?? null;
+    if (value) {
+      await assertPathExists(value, "Done progress file");
+    }
+    updateData.doneProgressFilePath = value;
+  }
+
+  if (input.futureFilePath !== undefined) {
+    const value = input.futureFilePath?.trim() ?? null;
+    if (value) {
+      await assertPathExists(value, "Future features file");
+    }
+    updateData.futureFilePath = value;
+  }
+
+  if (input.implementationPlanFilePath !== undefined) {
+    const value = input.implementationPlanFilePath?.trim() ?? null;
+    if (value) {
+      await assertPathExists(value, "Implementation plan file");
+    }
+    updateData.implementationPlanFilePath = value;
+  }
+
+  if (input.todoProgressFilePath !== undefined) {
+    const trimmedPath = input.todoProgressFilePath.trim();
+    await assertPathExists(trimmedPath, "Todo progress file");
+
+    const resolvedTaskSource = await resolveTaskSourceFile(trimmedPath);
+    if (resolvedTaskSource.resolvedFilePath !== trimmedPath) {
+      updateData.todoProgressFilePath = resolvedTaskSource.resolvedFilePath;
+      if (input.referenceDocs === undefined) {
+        const existingDocs = parseJsonField<string[]>(project.referenceDocsJson, []);
+        if (!existingDocs.includes(trimmedPath)) {
+          updateData.referenceDocsJson = stringifyJsonField([...existingDocs, trimmedPath]);
+        }
+      }
+    } else {
+      updateData.todoProgressFilePath = resolvedTaskSource.resolvedFilePath;
+    }
+  }
+
+  if (input.referenceDocs !== undefined) {
+    if (updateData.referenceDocsJson === undefined) {
+      updateData.referenceDocsJson = stringifyJsonField(input.referenceDocs.map((entry) => entry.trim()).filter(Boolean));
+    }
+  }
+
+  if (input.buildCommand !== undefined) {
+    updateData.buildCommand = input.buildCommand?.trim() ?? null;
+  }
+
+  if (input.testCommand !== undefined) {
+    updateData.testCommand = input.testCommand?.trim() ?? null;
+  }
+
+  if (input.lintCommand !== undefined) {
+    updateData.lintCommand = input.lintCommand?.trim() ?? null;
+  }
+
+  if (input.startCommand !== undefined) {
+    updateData.startCommand = input.startCommand?.trim() ?? null;
+  }
+
+  if (input.allowedPaths !== undefined) {
+    updateData.allowedPathsJson = stringifyJsonField(input.allowedPaths);
+  }
+
+  if (input.blockedPaths !== undefined) {
+    updateData.blockedPathsJson = stringifyJsonField(input.blockedPaths);
+  }
+
+  if (input.defaultBranch !== undefined) {
+    updateData.defaultBranch = input.defaultBranch?.trim() ?? null;
+  }
+
+  if (input.autoRunEnabled !== undefined) {
+    updateData.autoRunEnabled = input.autoRunEnabled;
+  }
+
+  if (Object.keys(updateData).length === 0) {
+    return getProjectDetail(projectId);
+  }
+
+  await prisma.project.update({
+    where: {
+      id: projectId,
+    },
+    data: updateData,
+  });
+
+  publishProjectEvent({
+    type: "info",
+    projectId,
+    timestamp: new Date().toISOString(),
+    message: `Project configuration was updated.`,
+  });
+
+  return getProjectDetail(projectId);
 }
 
 export async function rejectTask(taskId: string, reason?: string) {

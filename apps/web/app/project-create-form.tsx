@@ -221,6 +221,13 @@ function formatElapsed(ms: number) {
   return `${minutes}m ${seconds}s`;
 }
 
+function normalizeIntakeEngine(engine: string) {
+  if (engine === "heuristic-forced") {
+    return "heuristic";
+  }
+  return engine;
+}
+
 function nowStamp() {
   return new Date().toLocaleTimeString("en-CA", { hour12: false });
 }
@@ -1175,7 +1182,7 @@ export function ProjectCreateForm() {
         <section className="preview-panel">
           <h3>{text.draftPreview}</h3>
           <div className="inline-meta">
-            <span className="tag">{draft.engine}</span>
+            <span className="tag">{normalizeIntakeEngine(draft.engine)}</span>
             <span className="tag">{draft.provider}</span>
             <span className="tag">{draft.model}</span>
           </div>
@@ -1244,7 +1251,7 @@ export function ProjectCreateForm() {
         <section className="preview-panel">
           <h3>{text.projectAnalysis}</h3>
           <div className="inline-meta">
-            <span className="tag">{analysis.engine}</span>
+            <span className="tag">{normalizeIntakeEngine(analysis.engine)}</span>
             <span className="tag">{analysis.provider}</span>
             <span className="tag">{analysis.model}</span>
           </div>

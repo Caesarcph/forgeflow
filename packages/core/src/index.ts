@@ -112,7 +112,7 @@ export const TASK_STATUS_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
   coding: ["reviewing", "testing", "blocked", "failed"],
   reviewing: ["testing", "debugging", "waiting_human", "blocked"],
   testing: ["done", "waiting_human", "debugging", "failed"],
-  debugging: ["testing", "blocked", "failed"],
+  debugging: ["ready_for_coding", "testing", "blocked", "failed"],
   waiting_human: ["done", "planning", "coding", "skipped"],
   blocked: ["planning", "coding", "skipped"],
   done: [],

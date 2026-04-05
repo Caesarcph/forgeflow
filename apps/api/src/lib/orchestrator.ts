@@ -33,6 +33,7 @@ import {
   writeGitStateArtifacts,
 } from "./git-run-tracking.js";
 import { buildProjectMemorySnapshot } from "./project-memory.js";
+import { approveTask } from "./project-service.js";
 import { persistAgentRunArtifacts, persistGitRunArtifacts, persistVerificationRunArtifacts } from "./run-artifacts.js";
 
 type TaskWithProject = Awaited<
@@ -43,6 +44,33 @@ type TaskWithProject = Awaited<
     }>
   >
 >;
+
+const activeProjectExecutions = new Set<string>();
+const activeTaskExecutions = new Set<string>();
+
+async function setProjectAutoRunEnabled(projectId: string, enabled: boolean) {
+  await prisma.project.update({
+    where: {
+      id: projectId,
+    },
+    data: {
+      autoRunEnabled: enabled,
+    },
+  });
+}
+
+async function isProjectAutoRunEnabled(projectId: string) {
+  const project = await prisma.project.findUnique({
+    where: {
+      id: projectId,
+    },
+    select: {
+      autoRunEnabled: true,
+    },
+  });
+
+  return project?.autoRunEnabled ?? false;
+}
 
 async function getAgentConfig(projectId: string, roleName: AgentRole) {
   return prisma.agentConfig.findFirstOrThrow({
@@ -211,11 +239,14 @@ async function executeRole(input: {
     doneProgressFilePath: input.task.project.doneProgressFilePath,
     futureFilePath: input.task.project.futureFilePath,
     implementationPlanFilePath: input.task.project.implementationPlanFilePath,
+    designBriefFilePath: null,
+    interactionRulesFilePath: null,
+    visualReferencesFilePath: null,
     todoProgressFilePath: input.task.project.todoProgressFilePath,
     referenceDocs: parseJsonField<string[]>(input.task.project.referenceDocsJson, []),
   });
   const taskRelevantFiles = parseJsonField<string[]>(input.task.relevantFilesJson, []);
-  const relevantFiles = Array.from(new Set([...taskRelevantFiles, ...projectMemory.relevantFiles])).slice(0, 12);
+  const relevantFiles = Array.from(new Set([...taskRelevantFiles, ...projectMemory.relevantFiles]));
   const allowedPaths = parseJsonField<string[]>(input.task.project.allowedPathsJson, []);
   const blockedPaths = parseJsonField<string[]>(input.task.project.blockedPathsJson, []);
   const workspacePath = await createExecutionWorkspace({
@@ -241,6 +272,20 @@ async function executeRole(input: {
     apiKey: env.OPENCODE_API_KEY,
     cliPath: env.OPENCODE_CLI_PATH,
     timeoutMs: env.OPENCODE_CLI_TIMEOUT_MS,
+    onLog: (line) => {
+      const message = line.trim();
+
+      if (!message) {
+        return;
+      }
+
+      publishProjectEvent({
+        type: "info",
+        projectId: input.task.projectId,
+        timestamp: new Date().toISOString(),
+        message: `${input.task.taskCode} ${input.roleName}: ${message}`,
+      });
+    },
   });
   const gitPreflight = summarizeGitPreflight(
     await captureGitRepoState(input.task.project.rootPath),
@@ -1331,6 +1376,285 @@ export async function runNextTask(projectId: string) {
     ...run,
     selectedTaskId: selectedTask.id,
     selectedTaskCode: selectedTask.taskCode,
+  };
+}
+
+function backgroundExecutionFailedMessage(scope: string, error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return `${scope} failed: ${message}`;
+}
+
+async function runProjectAutopilotLoop(projectId: string) {
+  let completedTasks = 0;
+
+  publishProjectEvent({
+    type: "info",
+    projectId,
+    timestamp: new Date().toISOString(),
+    message: "Autopilot started. ForgeFlow will keep pulling runnable tasks until it hits a gate, failure, or stop request.",
+  });
+
+  while (await isProjectAutoRunEnabled(projectId)) {
+    const run = await runNextTask(projectId);
+
+    if (run.result === "idle") {
+      publishProjectEvent({
+        type: "info",
+        projectId,
+        timestamp: new Date().toISOString(),
+        message: "Autopilot stopped: no runnable task remains.",
+      });
+      return;
+    }
+
+    if (!("selectedTaskId" in run) || !run.selectedTaskId || !run.selectedTaskCode) {
+      publishProjectEvent({
+        type: "info",
+        projectId,
+        timestamp: new Date().toISOString(),
+        message: "Autopilot stopped: the next runnable task could not be resolved.",
+      });
+      return;
+    }
+
+    if (run.result === "failed" || run.result === "blocked") {
+      publishProjectEvent({
+        type: "info",
+        projectId,
+        timestamp: new Date().toISOString(),
+        message: `Autopilot stopped on ${run.selectedTaskCode}: ${run.result}.`,
+      });
+      return;
+    }
+
+    if (run.result === "waiting_human") {
+      const task = await prisma.task.findUnique({
+        where: {
+          id: run.selectedTaskId,
+        },
+        select: {
+          autoApprovable: true,
+          taskCode: true,
+        },
+      });
+
+      if (task?.autoApprovable) {
+        await approveTask(run.selectedTaskId, "Auto-approved by ForgeFlow autopilot after successful verification");
+        completedTasks += 1;
+
+        publishProjectEvent({
+          type: "info",
+          projectId,
+          timestamp: new Date().toISOString(),
+          message: `Autopilot auto-approved ${task.taskCode}. Completed tasks this session: ${completedTasks}.`,
+        });
+
+        continue;
+      }
+
+      publishProjectEvent({
+        type: "info",
+        projectId,
+        timestamp: new Date().toISOString(),
+        message: `Autopilot stopped on ${run.selectedTaskCode}: waiting for human approval.`,
+      });
+      return;
+    }
+
+    if (run.result === "done") {
+      completedTasks += 1;
+      continue;
+    }
+
+    publishProjectEvent({
+      type: "info",
+      projectId,
+      timestamp: new Date().toISOString(),
+      message: `Autopilot stopped on ${run.selectedTaskCode}: reached terminal state ${run.result}.`,
+    });
+    return;
+  }
+
+  publishProjectEvent({
+    type: "info",
+    projectId,
+    timestamp: new Date().toISOString(),
+    message: "Autopilot stop requested. ForgeFlow will remain idle until started again.",
+  });
+}
+
+export function startProjectExecutionInBackground(projectId: string) {
+  if (activeProjectExecutions.has(projectId)) {
+    return {
+      accepted: false,
+      message: "Project execution is already running.",
+    };
+  }
+
+  activeProjectExecutions.add(projectId);
+
+  void (async () => {
+    try {
+      await runNextTask(projectId);
+    } catch (error) {
+      publishProjectEvent({
+        type: "info",
+        projectId,
+        timestamp: new Date().toISOString(),
+        message: backgroundExecutionFailedMessage("Background project execution", error),
+      });
+    } finally {
+      activeProjectExecutions.delete(projectId);
+    }
+  })();
+
+  return {
+    accepted: true,
+    message: "Project execution queued in the background.",
+  };
+}
+
+export async function startProjectAutopilotInBackground(projectId: string) {
+  if (activeProjectExecutions.has(projectId)) {
+    return {
+      accepted: false,
+      message: "Project execution is already running.",
+    };
+  }
+
+  await setProjectAutoRunEnabled(projectId, true);
+  activeProjectExecutions.add(projectId);
+
+  void (async () => {
+    try {
+      await runProjectAutopilotLoop(projectId);
+    } catch (error) {
+      publishProjectEvent({
+        type: "info",
+        projectId,
+        timestamp: new Date().toISOString(),
+        message: backgroundExecutionFailedMessage("Background autopilot execution", error),
+      });
+    } finally {
+      await setProjectAutoRunEnabled(projectId, false).catch(() => undefined);
+      activeProjectExecutions.delete(projectId);
+    }
+  })();
+
+  return {
+    accepted: true,
+    message: "Autopilot started in the background.",
+  };
+}
+
+export async function stopProjectAutopilot(projectId: string) {
+  await setProjectAutoRunEnabled(projectId, false);
+
+  publishProjectEvent({
+    type: "info",
+    projectId,
+    timestamp: new Date().toISOString(),
+    message: activeProjectExecutions.has(projectId)
+      ? "Autopilot stop requested. The current task will finish before ForgeFlow stops pulling new work."
+      : "Autopilot disabled.",
+  });
+
+  return {
+    accepted: true,
+    message: activeProjectExecutions.has(projectId)
+      ? "Autopilot stop requested. The current task will finish before ForgeFlow stops."
+      : "Autopilot disabled.",
+  };
+}
+
+export function startTaskExecutionInBackground(taskId: string, action: "run" | "retry" = "run") {
+  if (activeTaskExecutions.has(taskId)) {
+    return {
+      accepted: false,
+      message: "Task execution is already running.",
+    };
+  }
+
+  activeTaskExecutions.add(taskId);
+
+  void (async () => {
+    let projectId: string | null = null;
+
+    try {
+      const task = await prisma.task.findUnique({
+        where: {
+          id: taskId,
+        },
+        select: {
+          projectId: true,
+        },
+      });
+      projectId = task?.projectId ?? null;
+      await runTask(taskId);
+    } catch (error) {
+      if (projectId) {
+        publishProjectEvent({
+          type: "info",
+          projectId,
+          timestamp: new Date().toISOString(),
+          message: backgroundExecutionFailedMessage(
+            action === "retry" ? "Background task retry" : "Background task execution",
+            error,
+          ),
+        });
+      }
+    } finally {
+      activeTaskExecutions.delete(taskId);
+    }
+  })();
+
+  return {
+    accepted: true,
+    message: action === "retry" ? "Task retry queued in the background." : "Task execution queued in the background.",
+  };
+}
+
+export function startTaskRecoveryInBackground(taskId: string, targetStage: OrchestratorStage) {
+  if (activeTaskExecutions.has(taskId)) {
+    return {
+      accepted: false,
+      message: "Task execution is already running.",
+    };
+  }
+
+  activeTaskExecutions.add(taskId);
+
+  void (async () => {
+    let projectId: string | null = null;
+
+    try {
+      const task = await prisma.task.findUnique({
+        where: {
+          id: taskId,
+        },
+        select: {
+          projectId: true,
+        },
+      });
+      projectId = task?.projectId ?? null;
+      await recoverTask(taskId, targetStage);
+    } catch (error) {
+      if (projectId) {
+        publishProjectEvent({
+          type: "info",
+          projectId,
+          timestamp: new Date().toISOString(),
+          message: backgroundExecutionFailedMessage(`Background recovery from ${targetStage}`, error),
+        });
+      }
+    } finally {
+      activeTaskExecutions.delete(taskId);
+    }
+  })();
+
+  return {
+    accepted: true,
+    message: `Recovery from ${targetStage} queued in the background.`,
   };
 }
 

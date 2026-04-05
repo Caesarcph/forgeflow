@@ -33,118 +33,125 @@ function buildDependents(tasks: ProjectTask[]) {
   return dependents;
 }
 
+function getText(language: "en" | "zh") {
+  if (language === "zh") {
+    return {
+      idle: "可以在这里运行任务、审批人工闸门，或强制回写 Markdown。",
+      running: "正在把任务加入后台执行...",
+      runQueued:
+        "任务已加入后台队列。若当前筛选不是“全部状态”，状态变化后它可能暂时从列表中消失。请查看实时活动。",
+      runFailed: "运行任务失败",
+      writingBack: "正在回写 Markdown 勾选状态...",
+      writebackDone: "任务已回写并标记完成。",
+      writebackFailed: "回写任务失败",
+      approving: "正在批准任务并写回进度...",
+      approved: "任务已批准。",
+      approveFailed: "批准任务失败",
+      rejecting: "正在退回到规划阶段...",
+      rejected: "任务已退回规划阶段。",
+      rejectFailed: "退回任务失败",
+      restartFrom: (stage: RecoveryStage) => `正在从 ${stage} 恢复执行路径...`,
+      recoveredFrom: (stage: RecoveryStage) => `已从 ${stage} 执行恢复路径。`,
+      recoverFailed: (stage: RecoveryStage) => `从 ${stage} 恢复失败`,
+      statusFilter: "状态筛选",
+      allStatuses: "全部状态",
+      activeStages: "进行中的阶段",
+      queued: "排队中",
+      waitingHuman: "等待人工",
+      failed: "失败",
+      done: "已完成",
+      taskType: "任务类型",
+      allTaskTypes: "全部任务类型",
+      auto: "自动",
+      humanGate: "人工闸门",
+      search: "搜索",
+      searchPlaceholder: "任务编号、标题、依赖、文件",
+      visible: "可见",
+      withDeps: "带依赖",
+      depsSatisfied: "依赖已满足",
+      waitingOnDeps: "等待依赖",
+      dependencyMap: "依赖关系图",
+      dependsOn: "依赖",
+      missing: "缺失",
+      unlocks: "解锁",
+      unsectioned: "未分组",
+      dependencies: "依赖",
+      acceptanceCriteria: "验收标准",
+      relevantFiles: "相关文件",
+      processing: "处理中...",
+      retryTask: "重试任务",
+      runTask: "运行任务",
+      approveWriteback: "批准并回写",
+      returnPlanning: "退回规划阶段",
+      restartPlanner: "从 Planner 重来",
+      restartCoder: "从 Coder 重来",
+      retryTester: "仅重试 Tester",
+      forceWriteback: "强制回写",
+      noTasks: "没有任务符合当前筛选条件。",
+    };
+  }
+
+  return {
+    idle: "Run tasks, approve human gates, or force Markdown writeback from here.",
+    running: "Queueing the task in the background...",
+    runQueued:
+      "Task queued in the background. If the current filter is not All statuses, it may disappear from this view once its status changes. Check Live Activity.",
+    runFailed: "Failed to run task",
+    writingBack: "Writing back the Markdown checkbox...",
+    writebackDone: "Task written back and marked complete.",
+    writebackFailed: "Failed to write back task",
+    approving: "Approving task and writing progress...",
+    approved: "Task approved.",
+    approveFailed: "Failed to approve task",
+    rejecting: "Returning task to planning...",
+    rejected: "Task returned to planning.",
+    rejectFailed: "Failed to reject task",
+    restartFrom: (stage: RecoveryStage) => `Restarting from ${stage}...`,
+    recoveredFrom: (stage: RecoveryStage) => `Recovery path executed from ${stage}.`,
+    recoverFailed: (stage: RecoveryStage) => `Failed to recover from ${stage}`,
+    statusFilter: "Status Filter",
+    allStatuses: "All statuses",
+    activeStages: "Active stages",
+    queued: "Queued",
+    waitingHuman: "Waiting human",
+    failed: "Failed",
+    done: "Done",
+    taskType: "Task Type",
+    allTaskTypes: "All task types",
+    auto: "Auto",
+    humanGate: "Human gate",
+    search: "Search",
+    searchPlaceholder: "Task code, title, dependency, file",
+    visible: "visible",
+    withDeps: "with deps",
+    depsSatisfied: "deps satisfied",
+    waitingOnDeps: "waiting on deps",
+    dependencyMap: "Dependency Map",
+    dependsOn: "depends on",
+    missing: "missing",
+    unlocks: "unlocks",
+    unsectioned: "Unsectioned",
+    dependencies: "Dependencies",
+    acceptanceCriteria: "Acceptance Criteria",
+    relevantFiles: "Relevant Files",
+    processing: "Processing...",
+    retryTask: "Retry Task",
+    runTask: "Run Task",
+    approveWriteback: "Approve And Write Back",
+    returnPlanning: "Return To Planning",
+    restartPlanner: "Restart From Planner",
+    restartCoder: "Restart From Coder",
+    retryTester: "Retry Tester Only",
+    forceWriteback: "Force Writeback",
+    noTasks: "No tasks matched the current filters.",
+  };
+}
+
 export function TaskBoard({ tasks }: { tasks: ProjectTask[] }) {
   const { language } = useLanguage();
   const router = useRouter();
   const [pendingTaskId, setPendingTaskId] = useState<string | null>(null);
-  const text =
-    language === "zh"
-      ? {
-          idle: "可以在这里运行任务、审批人工闸门，或强制回写 Markdown。",
-          running: "正在运行任务...",
-          runCompleted: "任务执行完成。",
-          runFailed: "运行任务失败",
-          writingBack: "正在回写 Markdown 勾选状态...",
-          writebackDone: "任务已回写并标记完成。",
-          writebackFailed: "回写任务失败",
-          approving: "正在批准任务并写回进度...",
-          approved: "任务已批准。",
-          approveFailed: "批准任务失败",
-          rejecting: "正在退回到规划阶段...",
-          rejected: "任务已退回规划阶段。",
-          rejectFailed: "退回任务失败",
-          restartFrom: (stage: RecoveryStage) => `正在从 ${stage} 重新开始...`,
-          recoveredFrom: (stage: RecoveryStage) => `已从 ${stage} 执行恢复路径。`,
-          recoverFailed: (stage: RecoveryStage) => `从 ${stage} 恢复失败`,
-          statusFilter: "状态筛选",
-          allStatuses: "全部状态",
-          activeStages: "进行中的阶段",
-          queued: "排队中",
-          waitingHuman: "等待人工",
-          failed: "失败",
-          done: "已完成",
-          taskType: "任务类型",
-          allTaskTypes: "全部任务类型",
-          auto: "自动",
-          humanGate: "人工闸门",
-          search: "搜索",
-          searchPlaceholder: "任务编号、标题、依赖、文件",
-          visible: "可见",
-          withDeps: "带依赖",
-          depsSatisfied: "依赖已满足",
-          waitingOnDeps: "等待依赖",
-          dependencyMap: "依赖关系图",
-          dependsOn: "依赖",
-          missing: "缺失",
-          unlocks: "解锁",
-          unsectioned: "未分组",
-          dependencies: "依赖",
-          acceptanceCriteria: "验收标准",
-          relevantFiles: "相关文件",
-          processing: "处理中...",
-          retryTask: "重试任务",
-          runTask: "运行任务",
-          approveWriteback: "批准并回写",
-          returnPlanning: "退回规划阶段",
-          restartPlanner: "从 Planner 重来",
-          restartCoder: "从 Coder 重来",
-          retryTester: "仅重试 Tester",
-          forceWriteback: "强制回写",
-          noTasks: "没有任务符合当前筛选条件。",
-        }
-      : {
-          idle: "Run tasks, approve human gates, or force Markdown writeback from here.",
-          running: "Running task...",
-          runCompleted: "Task run completed.",
-          runFailed: "Failed to run task",
-          writingBack: "Writing back the Markdown checkbox...",
-          writebackDone: "Task written back and marked complete.",
-          writebackFailed: "Failed to write back task",
-          approving: "Approving task and writing progress...",
-          approved: "Task approved.",
-          approveFailed: "Failed to approve task",
-          rejecting: "Returning task to planning...",
-          rejected: "Task returned to planning.",
-          rejectFailed: "Failed to reject task",
-          restartFrom: (stage: RecoveryStage) => `Restarting from ${stage}...`,
-          recoveredFrom: (stage: RecoveryStage) => `Recovery path executed from ${stage}.`,
-          recoverFailed: (stage: RecoveryStage) => `Failed to recover from ${stage}`,
-          statusFilter: "Status Filter",
-          allStatuses: "All statuses",
-          activeStages: "Active stages",
-          queued: "Queued",
-          waitingHuman: "Waiting human",
-          failed: "Failed",
-          done: "Done",
-          taskType: "Task Type",
-          allTaskTypes: "All task types",
-          auto: "Auto",
-          humanGate: "Human gate",
-          search: "Search",
-          searchPlaceholder: "Task code, title, dependency, file",
-          visible: "visible",
-          withDeps: "with deps",
-          depsSatisfied: "deps satisfied",
-          waitingOnDeps: "waiting on deps",
-          dependencyMap: "Dependency Map",
-          dependsOn: "depends on",
-          missing: "missing",
-          unlocks: "unlocks",
-          unsectioned: "Unsectioned",
-          dependencies: "Dependencies",
-          acceptanceCriteria: "Acceptance Criteria",
-          relevantFiles: "Relevant Files",
-          processing: "Processing...",
-          retryTask: "Retry Task",
-          runTask: "Run Task",
-          approveWriteback: "Approve And Write Back",
-          returnPlanning: "Return To Planning",
-          restartPlanner: "Restart From Planner",
-          restartCoder: "Restart From Coder",
-          retryTester: "Retry Tester Only",
-          forceWriteback: "Force Writeback",
-          noTasks: "No tasks matched the current filters.",
-        };
+  const text = getText(language);
   const [message, setMessage] = useState(text.idle);
   const [statusFilter, setStatusFilter] = useState<TaskStatusFilter>("all");
   const [typeFilter, setTypeFilter] = useState<TaskTypeFilter>("all");
@@ -204,19 +211,26 @@ export function TaskBoard({ tasks }: { tasks: ProjectTask[] }) {
   }, [tasks, taskIndex]);
 
   async function post(path: string, body?: Record<string, unknown>) {
+    const hasBody = body !== undefined;
     const response = await fetch(`${API_BASE_URL}${path}`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: body ? JSON.stringify(body) : undefined,
+      ...(hasBody
+        ? {
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(body),
+          }
+        : {}),
     });
 
-    const payload = await parseJsonResponse<{ error?: string; message?: string }>(response);
+    const payload = await parseJsonResponse<{ error?: string; message?: string; accepted?: boolean }>(response);
 
     if (!response.ok) {
       throw new Error(readApiError(payload, "Request failed"));
     }
+
+    return payload;
   }
 
   async function handleRun(taskId: string) {
@@ -224,8 +238,8 @@ export function TaskBoard({ tasks }: { tasks: ProjectTask[] }) {
     setMessage(text.running);
 
     try {
-      await post(`/tasks/${taskId}/run`);
-      setMessage(text.runCompleted);
+      const payload = await post(`/tasks/${taskId}/run`);
+      setMessage(payload.message ?? text.runQueued);
       router.refresh();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : text.runFailed);
