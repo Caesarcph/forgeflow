@@ -269,17 +269,31 @@ export function getStageRetryDelayMs(stage: OrchestratorStage, attemptNumber: nu
 
 export function getNextRunnableTask<T extends TaskLike>(tasks: T[]): T | null {
   const byTaskCode = new Map(tasks.map((task) => [task.taskCode, task]));
-  const runnableStatuses: TaskStatus[] = ["queued", "failed", "blocked"];
+  const resumableStatuses: TaskStatus[] = ["planning", "ready_for_coding", "coding", "reviewing", "testing", "debugging"];
+  const freshStatuses: TaskStatus[] = ["queued", "failed", "blocked"];
+  const runnableStatuses = new Set<TaskStatus>([...resumableStatuses, ...freshStatuses]);
+  const statusPriority = new Map<TaskStatus, number>(
+    [...resumableStatuses, ...freshStatuses].map((status, index) => [status, index]),
+  );
 
   const candidates = tasks
-    .filter((task) => runnableStatuses.includes(task.status))
+    .filter((task) => runnableStatuses.has(task.status))
     .filter((task) =>
       task.dependencies.every((dependencyCode) => {
         const dependency = byTaskCode.get(dependencyCode);
         return !dependency || dependency.status === "done" || dependency.status === "skipped";
       }),
     )
-    .sort((left, right) => (left.sourceLineStart ?? 0) - (right.sourceLineStart ?? 0));
+    .sort((left, right) => {
+      const statusDelta = (statusPriority.get(left.status) ?? Number.MAX_SAFE_INTEGER) -
+        (statusPriority.get(right.status) ?? Number.MAX_SAFE_INTEGER);
+
+      if (statusDelta !== 0) {
+        return statusDelta;
+      }
+
+      return (left.sourceLineStart ?? 0) - (right.sourceLineStart ?? 0);
+    });
 
   return candidates[0] ?? null;
 }

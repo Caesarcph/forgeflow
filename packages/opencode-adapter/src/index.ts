@@ -451,6 +451,16 @@ export async function resolveCliInvocation(cliPath: string, prompt: string, mode
 
 export function buildAgentPromptText(context: AgentExecutionContext) {
   const relevantFiles = context.relevantFiles.length > 0 ? context.relevantFiles.join(", ") : "None";
+  const safetyRules = [
+    "Execution safety rules:",
+    "- Treat the project root as the source of truth, but do not run mutating shell commands in the project root.",
+    ...(context.executionRootPath
+      ? [`- Run commands and make edits only inside the execution workspace: ${context.executionRootPath}`]
+      : []),
+    "- Never run destructive reset or cleanup commands, including prisma migrate reset, git reset --hard, git clean -f, rm -rf, format, diskpart, shutdown, or equivalent commands.",
+    "- Do not reset databases, wipe generated state, delete dependency folders, or change files outside the execution workspace.",
+    "- If a task seems to require a dangerous command, stop and explain the required human action instead.",
+  ].join("\n");
   const responseFormat =
     context.roleName === "planner"
       ? [
@@ -482,6 +492,8 @@ export function buildAgentPromptText(context: AgentExecutionContext) {
     `- Project root: ${context.projectRootPath}`,
     ...(context.executionRootPath ? [`- Execution workspace: ${context.executionRootPath}`] : []),
     `- Relevant files: ${relevantFiles}`,
+    "",
+    safetyRules,
     "",
     "Raw task text:",
     context.rawTaskText.trim() || "No raw task text provided.",
@@ -601,11 +613,6 @@ class OpenCodeCliExecutor implements AgentExecutor {
     const commandLabel = [invocation.file, ...invocation.args.filter((arg) => !arg.includes("\n")).slice(0, 8)].join(" ");
     const emitLog = this.options.onLog;
 
-    emitLog?.(`Starting OpenCode CLI`);
-    emitLog?.(`model=${resolvedModel}`);
-    emitLog?.(`cwd=${workingDirectory}`);
-    emitLog?.(`command=${commandLabel}`);
-
     return await new Promise<AgentExecutionResult>((resolve, reject) => {
       const child = spawn(invocation.file, invocation.args, {
         cwd: workingDirectory,
@@ -622,6 +629,25 @@ class OpenCodeCliExecutor implements AgentExecutor {
       let timedOut = false;
       let stdoutCarry = "";
       let stderrCarry = "";
+      let logFailure: Error | null = null;
+
+      const emit = (line: string) => {
+        if (finished || logFailure) {
+          return;
+        }
+
+        try {
+          emitLog?.(line);
+        } catch (error) {
+          logFailure = error instanceof Error ? error : new Error(String(error));
+          child.kill("SIGTERM");
+        }
+      };
+
+      emit(`Starting OpenCode CLI`);
+      emit(`model=${resolvedModel}`);
+      emit(`cwd=${workingDirectory}`);
+      emit(`command=${commandLabel}`);
 
       const flushLines = (source: "stdout" | "stderr", chunk: string, carryRef: "stdoutCarry" | "stderrCarry") => {
         const combined = `${carryRef === "stdoutCarry" ? stdoutCarry : stderrCarry}${chunk}`;
@@ -633,12 +659,12 @@ class OpenCodeCliExecutor implements AgentExecutor {
             const parsed = parseOpencodeJsonEvents(part);
 
             if (parsed?.text) {
-              emitLog?.(`stdout: ${shorten(parsed.text, 180)}`);
+              emit(`stdout: ${shorten(parsed.text, 180)}`);
               continue;
             }
           }
 
-          emitLog?.(`${source}: ${part}`);
+          emit(`${source}: ${part}`);
         }
 
         if (carryRef === "stdoutCarry") {
@@ -654,7 +680,7 @@ class OpenCodeCliExecutor implements AgentExecutor {
         }
 
         timedOut = true;
-        emitLog?.(`Timeout after ${timeoutMs}ms. Terminating OpenCode CLI.`);
+        emit(`Timeout after ${timeoutMs}ms. Terminating OpenCode CLI.`);
         child.kill("SIGTERM");
       }, timeoutMs);
 
@@ -664,7 +690,7 @@ class OpenCodeCliExecutor implements AgentExecutor {
         }
 
         aborted = true;
-        emitLog?.(`Abort requested. Terminating OpenCode CLI.`);
+        emit(`Abort requested. Terminating OpenCode CLI.`);
         child.kill("SIGTERM");
       };
 
@@ -712,6 +738,11 @@ class OpenCodeCliExecutor implements AgentExecutor {
         const finalStdout = stripAnsi(`${stdout}\n${stdoutCarry}`).trim();
         const finalStderr = stripAnsi(`${stderr}\n${stderrCarry}`).trim();
         const outputSummary = summarizeProcessOutput(finalStdout, finalStderr);
+
+        if (logFailure) {
+          reject(logFailure);
+          return;
+        }
 
         if (aborted) {
           reject(
@@ -767,7 +798,7 @@ class OpenCodeCliExecutor implements AgentExecutor {
         const parsedEvents = parseOpencodeJsonEvents(finalStdout);
         const rawOutput = parsedEvents?.text || finalStdout || finalStderr || "OpenCode CLI returned no output.";
         const structured = parseStructuredOutput(rawOutput);
-        emitLog?.(`OpenCode CLI completed successfully.`);
+        emit(`OpenCode CLI completed successfully.`);
         resolve({
           outputSummary: structured?.summary ?? structured?.outputText ?? shorten(rawOutput),
           rawOutput,

@@ -31,6 +31,8 @@ import {
 } from "./lib/project-service.js";
 import {
   recoverTask,
+  initializeExecutionState,
+  resumeProjectAutopilotsInBackground,
   runNextTask,
   runTask,
   startProjectAutopilotInBackground,
@@ -70,6 +72,8 @@ function sendApiError(reply: { code: (statusCode: number) => { send: (payload: u
 }
 
 await initializeIntakeJobs();
+const executionState = await initializeExecutionState();
+resumeProjectAutopilotsInBackground(executionState.autoRunProjectIds);
 
 await app.register(cors, {
   origin: true,

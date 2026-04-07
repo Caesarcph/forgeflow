@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import { execaCommand } from "execa";
 
 import {
@@ -15,13 +17,14 @@ import {
 import {
   createAgentExecutor,
   executeAgentWithFallback,
+  ForgeFlowExecutionError,
   type DebuggerPayload,
   type ReviewerPayload,
 } from "@forgeflow/opencode-adapter";
 import { parseJsonField, prisma } from "@forgeflow/db";
 
 import { env } from "./env.js";
-import { assertSafeShellCommand } from "./command-safety.js";
+import { assertSafeShellCommand, extractShellToolUseFromAgentLog } from "./command-safety.js";
 import { assertBoundaryValidation, captureProjectSnapshot, diffProjectSnapshots, validateBoundaryChanges } from "./execution-boundaries.js";
 import { createExecutionWorkspace, syncWorkspaceChangesToProject } from "./execution-workspace.js";
 import { publishProjectEvent } from "./events.js";
@@ -47,6 +50,33 @@ type TaskWithProject = Awaited<
 
 const activeProjectExecutions = new Set<string>();
 const activeTaskExecutions = new Set<string>();
+
+export async function initializeExecutionState() {
+  const autoRunProjects = await prisma.project.findMany({
+    where: {
+      autoRunEnabled: true,
+    },
+    select: {
+      id: true,
+    },
+  });
+
+  const interruptedRuns = await prisma.taskRun.updateMany({
+    where: {
+      endedAt: null,
+    },
+    data: {
+      status: "interrupted",
+      outputSummary: "Run was interrupted because the ForgeFlow API process restarted.",
+      endedAt: new Date(),
+    },
+  });
+
+  return {
+    autoRunProjectIds: autoRunProjects.map((project) => project.id),
+    interruptedRuns: interruptedRuns.count,
+  };
+}
 
 async function setProjectAutoRunEnabled(projectId: string, enabled: boolean) {
   await prisma.project.update({
@@ -147,6 +177,7 @@ async function createRun(input: {
   status: string;
   inputSummary: string;
   outputSummary: string;
+  endedAt?: Date | null;
 }) {
   const run = await prisma.taskRun.create({
     data: {
@@ -157,7 +188,7 @@ async function createRun(input: {
       status: input.status,
       inputSummary: input.inputSummary,
       outputSummary: input.outputSummary,
-      endedAt: new Date(),
+      endedAt: input.endedAt === undefined ? new Date() : input.endedAt,
     },
   });
 
@@ -172,6 +203,54 @@ async function createRun(input: {
   });
 
   return run;
+}
+
+async function updateRun(input: {
+  runId: string;
+  projectId: string;
+  taskId: string;
+  roleName: string;
+  status: string;
+  outputSummary: string;
+  endedAt?: Date | null;
+}) {
+  const run = await prisma.taskRun.update({
+    where: {
+      id: input.runId,
+    },
+    data: {
+      status: input.status,
+      outputSummary: input.outputSummary,
+      endedAt: input.endedAt === undefined ? new Date() : input.endedAt,
+    },
+  });
+
+  publishProjectEvent({
+    type: "task_run",
+    projectId: input.projectId,
+    timestamp: new Date().toISOString(),
+    taskId: input.taskId,
+    roleName: input.roleName,
+    status: input.status,
+    outputSummary: input.outputSummary,
+  });
+
+  return run;
+}
+
+async function createStartedRun(input: {
+  projectId: string;
+  taskId: string;
+  roleName: string;
+  model: string;
+  inputSummary: string;
+  outputSummary: string;
+}) {
+  return createRun({
+    ...input,
+    status: "running",
+    endedAt: null,
+  });
 }
 
 function sleep(ms: number) {
@@ -267,6 +346,14 @@ async function executeRole(input: {
     "Project memory summary:",
     ...projectMemory.summary.map((line) => `- ${line}`),
   ].join("\n");
+  const startedRun = await createStartedRun({
+    projectId: input.task.projectId,
+    taskId: input.task.id,
+    roleName: input.roleName,
+    model: configuredModelLabel(agentConfig.model, agentConfig.fallbackModel),
+    inputSummary: input.goal,
+    outputSummary: `${input.roleName} started`,
+  });
   const executor = createAgentExecutor(agentConfig.provider, {
     baseUrl: env.OPENCODE_BASE_URL,
     apiKey: env.OPENCODE_API_KEY,
@@ -277,6 +364,29 @@ async function executeRole(input: {
 
       if (!message) {
         return;
+      }
+
+      const shellToolUse = extractShellToolUseFromAgentLog(message);
+
+      if (shellToolUse) {
+        assertSafeShellCommand(shellToolUse.command);
+        const workdir = shellToolUse.workdir ? path.resolve(shellToolUse.workdir) : "";
+        const workspaceRoot = path.resolve(workspacePath);
+
+        const relativeWorkdir = workdir ? path.relative(workspaceRoot, workdir) : "";
+
+        if (workdir && (relativeWorkdir.startsWith("..") || path.isAbsolute(relativeWorkdir))) {
+          throw new ForgeFlowExecutionError({
+            code: "AGENT_TOOL_WORKDIR_OUTSIDE_EXECUTION_WORKSPACE",
+            message: `Agent shell tool attempted to run outside the execution workspace: ${workdir}`,
+            details: {
+              command: shellToolUse.command,
+              workdir,
+              executionWorkspace: workspaceRoot,
+              tool: shellToolUse.tool,
+            },
+          });
+        }
       }
 
       publishProjectEvent({
@@ -302,10 +412,48 @@ async function executeRole(input: {
   }
 
   const snapshotBefore = await captureProjectSnapshot(workspacePath);
+  try {
+    const execution = await executeAgentWithFallback({
+      executor,
+      context: {
+        taskId: input.task.id,
+        taskCode: input.task.taskCode,
+        projectId: input.task.projectId,
+        projectRootPath: input.task.project.rootPath,
+        executionRootPath: workspacePath,
+        roleName: input.roleName,
+        provider: agentConfig.provider,
+        model: agentConfig.model,
+        systemPrompt,
+        goal: input.goal,
+        rawTaskText,
+        relevantFiles,
+      },
+      fallbackModel: agentConfig.fallbackModel,
+      onFallback: ({ fromModel, toModel, error }) => {
+        publishProjectEvent({
+          type: "info",
+          projectId: input.task.projectId,
+          timestamp: new Date().toISOString(),
+          message: `${input.roleName} fallback activated: ${fromModel} -> ${toModel}. Cause: ${error.message}`,
+        });
+      },
+    });
+    const result = execution.result;
+    const modelUsed = execution.modelUsed;
+    const usedFallback = execution.usedFallback;
+    const attempts = execution.attempts;
 
-  const execution = await executeAgentWithFallback({
-    executor,
-    context: {
+    if (usedFallback) {
+      publishProjectEvent({
+        type: "info",
+        projectId: input.task.projectId,
+        timestamp: new Date().toISOString(),
+        message: `${input.roleName} completed using fallback model ${modelUsed}.`,
+      });
+    }
+
+    const executionContextBase = {
       taskId: input.task.id,
       taskCode: input.task.taskCode,
       projectId: input.task.projectId,
@@ -313,75 +461,49 @@ async function executeRole(input: {
       executionRootPath: workspacePath,
       roleName: input.roleName,
       provider: agentConfig.provider,
-      model: agentConfig.model,
+      model: modelUsed,
       systemPrompt,
       goal: input.goal,
       rawTaskText,
       relevantFiles,
-    },
-    fallbackModel: agentConfig.fallbackModel,
-    onFallback: ({ fromModel, toModel, error }) => {
-      publishProjectEvent({
-        type: "info",
-        projectId: input.task.projectId,
-        timestamp: new Date().toISOString(),
-        message: `${input.roleName} fallback activated: ${fromModel} -> ${toModel}. Cause: ${error.message}`,
-      });
-    },
-  });
-  const result = execution.result;
-  const modelUsed = execution.modelUsed;
-  const usedFallback = execution.usedFallback;
-  const attempts = execution.attempts;
-
-  if (usedFallback) {
-    publishProjectEvent({
-      type: "info",
-      projectId: input.task.projectId,
-      timestamp: new Date().toISOString(),
-      message: `${input.roleName} completed using fallback model ${modelUsed}.`,
+    };
+    const snapshotAfter = await captureProjectSnapshot(workspacePath);
+    const fileChanges = diffProjectSnapshots(snapshotBefore, snapshotAfter);
+    const boundaryValidation = validateBoundaryChanges({
+      changes: fileChanges,
+      allowedPaths,
+      blockedPaths,
+      canWriteFiles: agentConfig.canWriteFiles,
     });
-  }
+    assertBoundaryValidation(boundaryValidation);
 
-  const executionContextBase = {
-    taskId: input.task.id,
-    taskCode: input.task.taskCode,
-    projectId: input.task.projectId,
-    projectRootPath: input.task.project.rootPath,
-    executionRootPath: workspacePath,
-    roleName: input.roleName,
-    provider: agentConfig.provider,
-    model: modelUsed,
-    systemPrompt,
-    goal: input.goal,
-    rawTaskText,
-    relevantFiles,
-  };
-  const snapshotAfter = await captureProjectSnapshot(workspacePath);
-  const fileChanges = diffProjectSnapshots(snapshotBefore, snapshotAfter);
-  const boundaryValidation = validateBoundaryChanges({
-    changes: fileChanges,
-    allowedPaths,
-    blockedPaths,
-    canWriteFiles: agentConfig.canWriteFiles,
-  });
-  assertBoundaryValidation(boundaryValidation);
-
-  return {
-    agentConfig,
-    actualModel: modelUsed,
-    usedFallbackModel: usedFallback,
-    executionAttempts: attempts,
-    executionContext: {
-      ...executionContextBase,
+    return {
+      runId: startedRun.id,
+      agentConfig,
+      actualModel: modelUsed,
+      usedFallbackModel: usedFallback,
+      executionAttempts: attempts,
+      executionContext: {
+        ...executionContextBase,
+        gitPreflight,
+      },
+      projectMemory,
+      workspacePath,
+      fileChanges,
       gitPreflight,
-    },
-    projectMemory,
-    workspacePath,
-    fileChanges,
-    gitPreflight,
-    result,
-  };
+      result,
+    };
+  } catch (error) {
+    await updateRun({
+      runId: startedRun.id,
+      projectId: input.task.projectId,
+      taskId: input.task.id,
+      roleName: input.roleName,
+      status: "failed",
+      outputSummary: error instanceof Error ? error.message : String(error),
+    }).catch(() => undefined);
+    throw error;
+  }
 }
 
 async function runVerification(task: TaskWithProject, verificationCommand: string) {
@@ -711,13 +833,12 @@ async function runPlanningStage(task: TaskWithProject, state: StageMachineState)
   let plannerRunId = plannerOutcome.fallbackRunId;
 
   if (plannerOutcome.execution) {
-    const plannerRun = await createRun({
+    const plannerRun = await updateRun({
+      runId: plannerOutcome.execution.runId,
       projectId: task.projectId,
       taskId: task.id,
       roleName: "planner",
-      model: plannerOutcome.execution.actualModel,
       status: "done",
-      inputSummary: task.rawText,
       outputSummary: plannerOutcome.execution.usedFallbackModel
         ? `${plannerOutcome.execution.result.outputSummary} (fallback model: ${plannerOutcome.execution.actualModel})`
         : plannerOutcome.execution.result.outputSummary,
@@ -807,13 +928,12 @@ async function runCodingStage(task: TaskWithProject, state: StageMachineState): 
     systemPromptFallback: "Implement the task with minimal, focused changes.",
     inputSummary: plannerPayload.goal,
   });
-  const coderRun = await createRun({
+  const coderRun = await updateRun({
+    runId: coderExecution.runId,
     projectId: task.projectId,
     taskId: task.id,
     roleName: "coder",
-    model: coderExecution.actualModel,
     status: "done",
-    inputSummary: plannerPayload.goal,
     outputSummary: coderExecution.usedFallbackModel
       ? `${coderExecution.result.outputSummary} (fallback model: ${coderExecution.actualModel})`
       : coderExecution.result.outputSummary,
@@ -907,13 +1027,12 @@ async function runReviewingStage(task: TaskWithProject, state: StageMachineState
   let reviewerRunId = reviewerOutcome.fallbackRunId;
 
   if (reviewerOutcome.execution) {
-    const reviewerRun = await createRun({
+    const reviewerRun = await updateRun({
+      runId: reviewerOutcome.execution.runId,
       projectId: task.projectId,
       taskId: task.id,
       roleName: "reviewer",
-      model: reviewerOutcome.execution.actualModel,
       status: reviewerPayload.verdict === "pass" ? "done" : "flagged",
-      inputSummary: plannerPayload.goal,
       outputSummary: reviewerOutcome.execution.usedFallbackModel
         ? `${reviewerOutcome.execution.result.outputSummary} (fallback model: ${reviewerOutcome.execution.actualModel})`
         : reviewerOutcome.execution.result.outputSummary,
@@ -1191,13 +1310,12 @@ async function runDebuggingStage(task: TaskWithProject, state: StageMachineState
   let debuggerRunId = debuggerOutcome.fallbackRunId;
 
   if (debuggerOutcome.execution) {
-    const debuggerRun = await createRun({
+    const debuggerRun = await updateRun({
+      runId: debuggerOutcome.execution.runId,
       projectId: task.projectId,
       taskId: task.id,
       roleName: "debugger",
-      model: debuggerOutcome.execution.actualModel,
       status: "done",
-      inputSummary: debugGoal,
       outputSummary: debuggerOutcome.execution.usedFallbackModel
         ? `${debuggerOutcome.execution.result.outputSummary} (fallback model: ${debuggerOutcome.execution.actualModel})`
         : debuggerOutcome.execution.result.outputSummary,
@@ -1514,15 +1632,7 @@ export function startProjectExecutionInBackground(projectId: string) {
   };
 }
 
-export async function startProjectAutopilotInBackground(projectId: string) {
-  if (activeProjectExecutions.has(projectId)) {
-    return {
-      accepted: false,
-      message: "Project execution is already running.",
-    };
-  }
-
-  await setProjectAutoRunEnabled(projectId, true);
+function launchAutopilotLoop(projectId: string) {
   activeProjectExecutions.add(projectId);
 
   void (async () => {
@@ -1540,10 +1650,45 @@ export async function startProjectAutopilotInBackground(projectId: string) {
       activeProjectExecutions.delete(projectId);
     }
   })();
+}
+
+export async function startProjectAutopilotInBackground(projectId: string) {
+  if (activeProjectExecutions.has(projectId)) {
+    return {
+      accepted: false,
+      message: "Project execution is already running.",
+    };
+  }
+
+  await setProjectAutoRunEnabled(projectId, true);
+  launchAutopilotLoop(projectId);
 
   return {
     accepted: true,
     message: "Autopilot started in the background.",
+  };
+}
+
+export function resumeProjectAutopilotsInBackground(projectIds: string[]) {
+  const resumedProjectIds: string[] = [];
+
+  for (const projectId of projectIds) {
+    if (activeProjectExecutions.has(projectId)) {
+      continue;
+    }
+
+    publishProjectEvent({
+      type: "info",
+      projectId,
+      timestamp: new Date().toISOString(),
+      message: "Autopilot resumed after API startup.",
+    });
+    launchAutopilotLoop(projectId);
+    resumedProjectIds.push(projectId);
+  }
+
+  return {
+    resumedProjectIds,
   };
 }
 

@@ -1,6 +1,15 @@
-import { promises as fs } from "node:fs";
+// Legacy project-memory.ts — backward-compatible facade.
+// Composes project memory + design memory into a single snapshot for existing consumers.
+// New code should import from ./memory/ directly.
 
 import { parseJsonField, stringifyJsonField } from "@forgeflow/db";
+
+import {
+  buildProjectMemorySnapshot as buildProjectMemory,
+  buildDesignMemorySnapshot as buildDesignMemory,
+  type ProjectMemorySnapshot as NewProjectMemorySnapshot,
+  type DesignMemorySnapshot,
+} from "./memory/index.js";
 
 type ProjectMemoryProject = {
   introFilePath: string | null;
@@ -35,21 +44,6 @@ export interface ProjectMemorySnapshot {
 export interface PersistedProjectMemoryPayload {
   summary: string[];
   sources: ProjectMemorySource[];
-}
-
-async function readSnippet(filePath: string, maxLines = 5) {
-  try {
-    const content = await fs.readFile(filePath, "utf8");
-    return content
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .slice(0, maxLines)
-      .join(" ")
-      .slice(0, 500);
-  } catch {
-    return "";
-  }
 }
 
 function unique<T>(items: T[]) {
@@ -114,6 +108,25 @@ function readPersistedProjectMemory(project: ProjectMemoryProject): ProjectMemor
   };
 }
 
+function mergeSnapshots(
+  projectMemory: NewProjectMemorySnapshot,
+  designMemory: DesignMemorySnapshot,
+): ProjectMemorySnapshot {
+  const allSources: ProjectMemorySource[] = [
+    ...projectMemory.sources,
+    ...designMemory.sources,
+  ];
+  const allSummary = [...projectMemory.summary, ...designMemory.summary];
+  const allRelevantFiles = unique([...projectMemory.relevantFiles, ...designMemory.relevantFiles]);
+
+  return {
+    summary: allSummary,
+    sources: allSources,
+    promptBlock: [projectMemory.promptBlock, designMemory.promptBlock].filter(Boolean).join("\n\n"),
+    relevantFiles: allRelevantFiles,
+  };
+}
+
 export async function buildProjectMemorySnapshot(
   project: ProjectMemoryProject,
   options?: {
@@ -126,105 +139,23 @@ export async function buildProjectMemorySnapshot(
     return persisted;
   }
 
-  const designCandidates: Array<Omit<ProjectMemorySource, "snippet">> = [
-    project.designBriefFilePath
-      ? {
-          kind: "design_brief",
-          label: "UI brief",
-          path: project.designBriefFilePath,
-        }
-      : null,
-    project.interactionRulesFilePath
-      ? {
-          kind: "interaction_rules",
-          label: "Interaction rules",
-          path: project.interactionRulesFilePath,
-        }
-      : null,
-    project.visualReferencesFilePath
-      ? {
-          kind: "visual_references",
-          label: "Visual references",
-          path: project.visualReferencesFilePath,
-        }
-      : null,
-  ].filter((entry): entry is Omit<ProjectMemorySource, "snippet"> => Boolean(entry));
+  // Build project memory (core docs only)
+  const projectMemory = await buildProjectMemory({
+    introFilePath: project.introFilePath,
+    doneProgressFilePath: project.doneProgressFilePath,
+    futureFilePath: project.futureFilePath,
+    implementationPlanFilePath: project.implementationPlanFilePath,
+    todoProgressFilePath: project.todoProgressFilePath,
+    referenceDocs: project.referenceDocs,
+  });
 
-  const candidates: Array<Omit<ProjectMemorySource, "snippet">> = [
-    project.introFilePath
-      ? {
-          kind: "primary",
-          label: "Primary reference doc",
-          path: project.introFilePath,
-        }
-      : null,
-    project.doneProgressFilePath
-      ? {
-          kind: "completed",
-          label: "Completed features doc",
-          path: project.doneProgressFilePath,
-        }
-      : null,
-    project.futureFilePath
-      ? {
-          kind: "future",
-          label: "Future roadmap doc",
-          path: project.futureFilePath,
-        }
-      : null,
-    project.implementationPlanFilePath
-      ? {
-          kind: "plan",
-          label: "Implementation plan",
-          path: project.implementationPlanFilePath,
-        }
-      : null,
-    project.todoProgressFilePath
-      ? {
-          kind: "todo",
-          label: "TODO progress file",
-          path: project.todoProgressFilePath,
-        }
-      : null,
-    ...project.referenceDocs.map((filePath) => ({
-      kind: "reference" as const,
-      label: "Extra reference doc",
-      path: filePath,
-    })),
-    ...designCandidates,
-  ].filter((entry): entry is Omit<ProjectMemorySource, "snippet"> => Boolean(entry));
+  // Build design memory (design-specific docs)
+  const designMemory = await buildDesignMemory({
+    designBriefFilePath: project.designBriefFilePath,
+    interactionRulesFilePath: project.interactionRulesFilePath,
+    visualReferencesFilePath: project.visualReferencesFilePath,
+  });
 
-  const sources = (
-    await Promise.all(
-      candidates.map(async (source) => ({
-        ...source,
-        snippet: await readSnippet(source.path),
-      })),
-    )
-  ).filter((source) => source.snippet);
-
-  const summary = [
-    sources.find((source) => source.kind === "primary")
-      ? "Primary project reference is loaded"
-      : "Primary project reference is missing",
-    sources.find((source) => source.kind === "todo")
-      ? "TODO progress file is loaded into memory"
-      : "TODO progress file summary is unavailable",
-    sources.find((source) => source.kind === "plan")
-      ? "Implementation plan context is available"
-      : "Implementation plan context is missing",
-    sources.find((source) => source.kind === "completed")
-      ? "Completed-features history is available"
-      : "Completed-features history is missing",
-    sources.find((source) => source.kind === "future")
-      ? "Future roadmap context is available"
-      : "Future roadmap context is missing",
-  ];
-
-  return {
-    summary,
-    sources,
-    promptBlock: buildPromptBlock(sources),
-    relevantFiles: unique(sources.map((source) => source.path)),
-  };
+  // Merge for backward compatibility
+  return mergeSnapshots(projectMemory, designMemory);
 }

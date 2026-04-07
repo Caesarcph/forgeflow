@@ -30,6 +30,7 @@ model Project {
   defaultBranch        String?
   intakeEngine         String?
   autoRunEnabled       Boolean       @default(false)
+  safeAutoRunEnabled   Boolean       @default(false)
   memorySummaryJson    String?
   memorySourcesJson    String?
   memoryPromptBlock    String?
@@ -61,6 +62,7 @@ model Task {
   dependenciesJson       String?
   relevantFilesJson      String?
   latestSummary          String?
+  safeMode             Boolean     @default(false)
   createdAt              DateTime    @default(now())
   updatedAt              DateTime    @updatedAt
   project                Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)

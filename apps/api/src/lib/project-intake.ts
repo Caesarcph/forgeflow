@@ -497,7 +497,50 @@ function buildReadmeContent(name: string, stackLabel: string) {
 }
 
 function shouldSkipDirectory(name: string) {
-  return [".git", "node_modules", "dist", "build", ".next", ".turbo", "coverage"].includes(name);
+  return [
+    ".git",
+    ".forgeflow",
+    ".next",
+    ".remember",
+    ".turbo",
+    "backups",
+    "build",
+    "coverage",
+    "dist",
+    "node_modules",
+  ].includes(name);
+}
+
+async function hasProjectContextMarkers(directoryPath: string) {
+  const markerPaths = [
+    "TODO.md",
+    "README.md",
+    "package.json",
+    "docs",
+  ].map((marker) => path.join(directoryPath, marker));
+
+  for (const markerPath of markerPaths) {
+    try {
+      await fs.access(markerPath);
+      return true;
+    } catch {
+      // Keep checking the other lightweight markers.
+    }
+  }
+
+  return false;
+}
+
+async function getSafeParentContextRoots(parentPath: string) {
+  if (path.resolve(parentPath) === path.parse(parentPath).root) {
+    return [];
+  }
+
+  if (!(await hasProjectContextMarkers(parentPath))) {
+    return [];
+  }
+
+  return [parentPath, path.join(parentPath, "docs")];
 }
 
 async function collectMarkdownFiles(rootPath: string, maxDepth: number, depth = 0): Promise<string[]> {
@@ -551,12 +594,14 @@ function scoreFile(filePath: string, keywords: string[]) {
 }
 
 function pickBestFile(files: string[], keywords: string[]) {
-  return [...files]
+  const best = [...files]
     .map((filePath) => ({
       filePath,
       score: scoreFile(filePath, keywords),
     }))
-    .sort((left, right) => right.score - left.score)[0]?.filePath;
+    .sort((left, right) => right.score - left.score)[0];
+
+  return best && best.score > 0 ? best.filePath : "";
 }
 
 function scoreIntroFile(filePath: string, projectHints: string[]) {
@@ -613,12 +658,14 @@ function scoreIntroFile(filePath: string, projectHints: string[]) {
 }
 
 function pickIntroFile(files: string[], projectHints: string[]) {
-  return [...files]
+  const best = [...files]
     .map((filePath) => ({
       filePath,
       score: scoreIntroFile(filePath, projectHints),
     }))
-    .sort((left, right) => right.score - left.score)[0]?.filePath;
+    .sort((left, right) => right.score - left.score)[0];
+
+  return best && best.score > 0 ? best.filePath : "";
 }
 
 function rankReferenceDocs(files: string[], projectHints: string[]) {
@@ -1164,8 +1211,13 @@ async function llmBrainstormDraft(input: z.infer<typeof brainstormSchema>, optio
     const message = error instanceof Error ? error.message : "Model refinement failed";
     options.onLog?.(`Model refinement failed. Falling back to heuristic draft.`);
     options.onLog?.(message);
-    if (error instanceof ForgeFlowExecutionError && typeof error.details?.output === "string" && error.details.output.trim()) {
-      options.onLog?.(`Model output tail: ${error.details.output.slice(-400)}`);
+    if (error instanceof ForgeFlowExecutionError) {
+      if (error.details?.cause) {
+        options.onLog?.(`Structured parsing reason: ${error.details.cause}`);
+      }
+      if (typeof error.details?.output === "string" && error.details.output.trim()) {
+        options.onLog?.(`Model output tail: ${error.details.output.slice(-400)}`);
+      }
     }
 
     return {
@@ -1242,6 +1294,7 @@ async function heuristicDetectExistingProject(
   const resolvedWorkPath = await resolveWorkingProjectPath(resolvedRootPath);
   const workspace = await detectWorkspaceLayout(resolvedRootPath, resolvedWorkPath, rootPackage ?? null);
   const parentPath = path.dirname(resolvedWorkPath);
+  const parentContextRoots = await getSafeParentContextRoots(parentPath);
   const searchRoots = Array.from(
     new Set([
       workspace.workspaceRoot,
@@ -1252,8 +1305,7 @@ async function heuristicDetectExistingProject(
       ...(workspace.backendRoot ? [workspace.backendRoot] : []),
       path.join(resolvedRootPath, "docs"),
       path.join(resolvedWorkPath, "docs"),
-      parentPath,
-      path.join(parentPath, "docs"),
+      ...parentContextRoots,
     ]),
   );
 

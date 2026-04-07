@@ -19,6 +19,7 @@ const envSchema = z.object({
   OPENCODE_CLI_TIMEOUT_MS: z.coerce.number().default(3600000),
   OPENCODE_INTAKE_TIMEOUT_MS: z.coerce.number().default(3600000),
   OPENCODE_HEALTHCHECK_TIMEOUT_MS: z.coerce.number().default(30000),
+  DRY_RUN: z.coerce.boolean().default(false),
 });
 
 export const env = envSchema.parse(process.env);
