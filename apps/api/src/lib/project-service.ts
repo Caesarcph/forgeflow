@@ -93,20 +93,29 @@ function normalizeOptionalString(value?: string): string | null {
   return value?.trim() ? value.trim() : null;
 }
 
+const DEFAULT_AGENT_CONFIGS: Record<string, { provider: string; model: string }> = {
+  planner:  { provider: "opencode", model: "mimo-v2-pro-free" },
+  coder:    { provider: "openai",   model: "gpt-5.4" },
+  reviewer: { provider: "opencode", model: "qwen3.6-plus-free" },
+  tester:   { provider: "openai",   model: "gpt-5.4" },
+  debugger: { provider: "openai",   model: "gpt-5.4" },
+};
+
 function defaultAgentConfig(roleName: string) {
   const basePrompt =
     defaultPrompts[roleName as keyof typeof defaultPrompts] ?? "Role prompt is not configured yet.";
+  const defaults = DEFAULT_AGENT_CONFIGS[roleName] ?? { provider: "openai", model: "gpt-5.4" };
 
   return {
     roleName,
-    enabled: roleName === "planner" || roleName === "coder" || roleName === "tester",
-    provider: "mock",
-    model: `forgeflow-${roleName}-mock`,
+    enabled: true,
+    provider: defaults.provider,
+    model: defaults.model,
     fallbackModel: null,
     temperature: roleName === "planner" ? 0.1 : 0.2,
-    maxTokens: 4000,
-    canWriteFiles: roleName === "coder" || roleName === "debugger",
-    canRunCommands: roleName === "coder" || roleName === "tester" || roleName === "debugger",
+    maxTokens: 9999999999,
+    canWriteFiles: true,
+    canRunCommands: true,
     systemPromptTemplate: basePrompt,
   };
 }
@@ -258,7 +267,7 @@ function serializeAgent(agent: {
   model: string;
   fallbackModel: string | null;
   temperature: number;
-  maxTokens: number;
+  maxTokens: number | bigint;
   canWriteFiles: boolean;
   canRunCommands: boolean;
   systemPromptTemplate: string;
@@ -271,7 +280,7 @@ function serializeAgent(agent: {
     model: agent.model,
     fallbackModel: agent.fallbackModel,
     temperature: agent.temperature,
-    maxTokens: agent.maxTokens,
+    maxTokens: Number(agent.maxTokens),
     canWriteFiles: agent.canWriteFiles,
     canRunCommands: agent.canRunCommands,
     systemPromptTemplate: agent.systemPromptTemplate,

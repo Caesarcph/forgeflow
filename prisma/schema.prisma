@@ -80,7 +80,7 @@ model AgentConfig {
   model                String
   fallbackModel        String?
   temperature          Float    @default(0.2)
-  maxTokens            Int      @default(4000)
+  maxTokens            BigInt   @default(4000)
   canWriteFiles        Boolean  @default(false)
   canRunCommands       Boolean  @default(false)
   systemPromptTemplate String
