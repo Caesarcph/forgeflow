@@ -53,6 +53,9 @@ export interface ProjectFormInput {
   doneProgressFilePath?: string;
   futureFilePath?: string;
   implementationPlanFilePath?: string;
+  designBriefFilePath?: string;
+  interactionRulesFilePath?: string;
+  visualReferencesFilePath?: string;
   referenceDocs?: string[];
   todoProgressFilePath: string;
   buildCommand?: string;

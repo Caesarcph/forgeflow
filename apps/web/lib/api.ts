@@ -44,6 +44,9 @@ export interface ProjectDetailResponse {
       doneProgressFilePath: string | null;
       futureFilePath: string | null;
       implementationPlanFilePath: string | null;
+      designBriefFilePath: string | null;
+      interactionRulesFilePath: string | null;
+      visualReferencesFilePath: string | null;
       referenceDocs: string[];
       todoProgressFilePath: string;
       buildCommand: string | null;
@@ -67,7 +70,16 @@ export interface ProjectDetailResponse {
       summary: string[];
       promptBlock?: string;
       sources: Array<{
-        kind: "primary" | "completed" | "future" | "plan" | "todo" | "reference";
+        kind:
+          | "primary"
+          | "completed"
+          | "future"
+          | "plan"
+          | "todo"
+          | "reference"
+          | "design_brief"
+          | "interaction_rules"
+          | "visual_references";
         label: string;
         path: string;
         snippet: string;
@@ -124,7 +136,16 @@ export interface ProjectRun {
 }
 
 export interface ProjectMemorySource {
-  kind: "primary" | "completed" | "future" | "plan" | "todo" | "reference";
+  kind:
+    | "primary"
+    | "completed"
+    | "future"
+    | "plan"
+    | "todo"
+    | "reference"
+    | "design_brief"
+    | "interaction_rules"
+    | "visual_references";
   label: string;
   path: string;
   snippet: string;

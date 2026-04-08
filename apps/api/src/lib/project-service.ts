@@ -33,6 +33,9 @@ const projectInputSchema = z.object({
   doneProgressFilePath: z.string().optional().or(z.literal("")),
   futureFilePath: z.string().optional().or(z.literal("")),
   implementationPlanFilePath: z.string().optional().or(z.literal("")),
+  designBriefFilePath: z.string().optional().or(z.literal("")),
+  interactionRulesFilePath: z.string().optional().or(z.literal("")),
+  visualReferencesFilePath: z.string().optional().or(z.literal("")),
   referenceDocs: z.array(z.string()).default([]),
   todoProgressFilePath: z.string().min(1),
   buildCommand: z.string().optional().or(z.literal("")),
@@ -72,7 +75,17 @@ const projectMemoryUpdateSchema = z.object({
   sources: z
     .array(
       z.object({
-        kind: z.enum(["primary", "completed", "future", "plan", "todo", "reference"]),
+        kind: z.enum([
+          "primary",
+          "completed",
+          "future",
+          "plan",
+          "todo",
+          "reference",
+          "design_brief",
+          "interaction_rules",
+          "visual_references",
+        ]),
         label: z.string().min(1),
         path: z.string().min(1),
         snippet: z.string(),
@@ -220,6 +233,9 @@ function serializeProject(project: {
   doneProgressFilePath: string | null;
   futureFilePath: string | null;
   implementationPlanFilePath: string | null;
+  designBriefFilePath: string | null;
+  interactionRulesFilePath: string | null;
+  visualReferencesFilePath: string | null;
   referenceDocsJson: string | null;
   todoProgressFilePath: string;
   buildCommand: string | null;
@@ -243,6 +259,9 @@ function serializeProject(project: {
     doneProgressFilePath: project.doneProgressFilePath,
     futureFilePath: project.futureFilePath,
     implementationPlanFilePath: project.implementationPlanFilePath,
+    designBriefFilePath: project.designBriefFilePath,
+    interactionRulesFilePath: project.interactionRulesFilePath,
+    visualReferencesFilePath: project.visualReferencesFilePath,
     referenceDocs: parseJsonField<string[]>(project.referenceDocsJson, []),
     todoProgressFilePath: project.todoProgressFilePath,
     buildCommand: project.buildCommand,
@@ -348,6 +367,18 @@ export async function createProject(rawInput: unknown) {
     await assertPathExists(input.implementationPlanFilePath, "Implementation plan file");
   }
 
+  if (input.designBriefFilePath?.trim()) {
+    await assertPathExists(input.designBriefFilePath, "Design brief file");
+  }
+
+  if (input.interactionRulesFilePath?.trim()) {
+    await assertPathExists(input.interactionRulesFilePath, "Interaction rules file");
+  }
+
+  if (input.visualReferencesFilePath?.trim()) {
+    await assertPathExists(input.visualReferencesFilePath, "Visual references file");
+  }
+
   for (const [index, referenceDoc] of referenceDocs.entries()) {
     await assertPathExists(referenceDoc, `Reference doc #${index + 1}`);
   }
@@ -369,6 +400,9 @@ export async function createProject(rawInput: unknown) {
       doneProgressFilePath: normalizeOptionalString(input.doneProgressFilePath),
       futureFilePath: normalizeOptionalString(input.futureFilePath),
       implementationPlanFilePath: normalizeOptionalString(input.implementationPlanFilePath),
+      designBriefFilePath: normalizeOptionalString(input.designBriefFilePath),
+      interactionRulesFilePath: normalizeOptionalString(input.interactionRulesFilePath),
+      visualReferencesFilePath: normalizeOptionalString(input.visualReferencesFilePath),
       referenceDocsJson: stringifyJsonField(referenceDocs),
       todoProgressFilePath: resolvedTaskSource.resolvedFilePath,
       buildCommand: normalizeOptionalString(input.buildCommand),
@@ -419,9 +453,9 @@ export async function createProject(rawInput: unknown) {
     doneProgressFilePath: project.doneProgressFilePath,
     futureFilePath: project.futureFilePath,
     implementationPlanFilePath: project.implementationPlanFilePath,
-    designBriefFilePath: null,
-    interactionRulesFilePath: null,
-    visualReferencesFilePath: null,
+    designBriefFilePath: project.designBriefFilePath,
+    interactionRulesFilePath: project.interactionRulesFilePath,
+    visualReferencesFilePath: project.visualReferencesFilePath,
     todoProgressFilePath: project.todoProgressFilePath,
     referenceDocs,
   });
@@ -532,9 +566,9 @@ export async function getProjectDetail(projectId: string) {
     doneProgressFilePath: project.doneProgressFilePath,
     futureFilePath: project.futureFilePath,
     implementationPlanFilePath: project.implementationPlanFilePath,
-    designBriefFilePath: null,
-    interactionRulesFilePath: null,
-    visualReferencesFilePath: null,
+    designBriefFilePath: project.designBriefFilePath,
+    interactionRulesFilePath: project.interactionRulesFilePath,
+    visualReferencesFilePath: project.visualReferencesFilePath,
     todoProgressFilePath: project.todoProgressFilePath,
     referenceDocs: serializedProject.referenceDocs,
     memorySummaryJson: persistedMemoryProject.memorySummaryJson ?? null,
@@ -729,9 +763,9 @@ export async function rebuildProjectMemory(projectId: string) {
     doneProgressFilePath: project.doneProgressFilePath,
     futureFilePath: project.futureFilePath,
     implementationPlanFilePath: project.implementationPlanFilePath,
-    designBriefFilePath: null,
-    interactionRulesFilePath: null,
-    visualReferencesFilePath: null,
+    designBriefFilePath: project.designBriefFilePath,
+    interactionRulesFilePath: project.interactionRulesFilePath,
+    visualReferencesFilePath: project.visualReferencesFilePath,
     todoProgressFilePath: project.todoProgressFilePath,
     referenceDocs: parseJsonField<string[]>(project.referenceDocsJson, []),
   }, {
@@ -952,6 +986,9 @@ const projectConfigUpdateSchema = z.object({
   doneProgressFilePath: z.string().optional().nullable(),
   futureFilePath: z.string().optional().nullable(),
   implementationPlanFilePath: z.string().optional().nullable(),
+  designBriefFilePath: z.string().optional().nullable(),
+  interactionRulesFilePath: z.string().optional().nullable(),
+  visualReferencesFilePath: z.string().optional().nullable(),
   referenceDocs: z.array(z.string()).optional(),
   todoProgressFilePath: z.string().min(1).optional(),
   buildCommand: z.string().optional().nullable(),
@@ -973,6 +1010,7 @@ export async function updateProjectConfig(projectId: string, rawInput: unknown) 
   });
 
   const updateData: Record<string, unknown> = {};
+  let reparsedTasks: ParsedTask[] | null = null;
 
   if (input.name !== undefined) {
     updateData.name = input.name.trim();
@@ -1010,11 +1048,36 @@ export async function updateProjectConfig(projectId: string, rawInput: unknown) 
     updateData.implementationPlanFilePath = value;
   }
 
+  if (input.designBriefFilePath !== undefined) {
+    const value = input.designBriefFilePath?.trim() ?? null;
+    if (value) {
+      await assertPathExists(value, "Design brief file");
+    }
+    updateData.designBriefFilePath = value;
+  }
+
+  if (input.interactionRulesFilePath !== undefined) {
+    const value = input.interactionRulesFilePath?.trim() ?? null;
+    if (value) {
+      await assertPathExists(value, "Interaction rules file");
+    }
+    updateData.interactionRulesFilePath = value;
+  }
+
+  if (input.visualReferencesFilePath !== undefined) {
+    const value = input.visualReferencesFilePath?.trim() ?? null;
+    if (value) {
+      await assertPathExists(value, "Visual references file");
+    }
+    updateData.visualReferencesFilePath = value;
+  }
+
   if (input.todoProgressFilePath !== undefined) {
     const trimmedPath = input.todoProgressFilePath.trim();
     await assertPathExists(trimmedPath, "Todo progress file");
 
     const resolvedTaskSource = await resolveTaskSourceFile(trimmedPath);
+    reparsedTasks = resolvedTaskSource.parsedTasks;
     if (resolvedTaskSource.resolvedFilePath !== trimmedPath) {
       updateData.todoProgressFilePath = resolvedTaskSource.resolvedFilePath;
       if (input.referenceDocs === undefined) {
@@ -1076,6 +1139,67 @@ export async function updateProjectConfig(projectId: string, rawInput: unknown) 
     },
     data: updateData,
   });
+
+  if (reparsedTasks) {
+    const existingTasks = await prisma.task.findMany({
+      where: { projectId },
+      select: { id: true, taskCode: true, status: true },
+    });
+    const existingByCode = new Map(existingTasks.map((t) => [t.taskCode, t]));
+    const incomingCodes = new Set(reparsedTasks.map((t) => t.taskCode));
+
+    const removedTasks = existingTasks.filter((t) => !incomingCodes.has(t.taskCode));
+    const safeToRemove = removedTasks.filter((t) => t.status === "queued" || t.status === "skipped");
+
+    if (safeToRemove.length > 0) {
+      await prisma.task.deleteMany({
+        where: { id: { in: safeToRemove.map((t) => t.id) } },
+      });
+    }
+
+    const newTasks = reparsedTasks.filter((t) => !existingByCode.has(t.taskCode));
+
+    if (newTasks.length > 0) {
+      await prisma.task.createMany({
+        data: newTasks.map((task) => ({
+          projectId,
+          taskCode: task.taskCode,
+          title: task.title,
+          section: task.section,
+          subsection: task.subsection,
+          rawText: task.rawText,
+          sourceFilePath: task.sourceFilePath,
+          sourceLineStart: task.sourceLineStart,
+          sourceLineEnd: task.sourceLineEnd,
+          status: task.status,
+          taskType: task.taskType,
+          autoApprovable: task.autoApprovable,
+          acceptanceCriteriaJson: stringifyJsonField(task.acceptanceCriteria),
+          dependenciesJson: stringifyJsonField(task.dependencies),
+          relevantFilesJson: stringifyJsonField(task.relevantFiles),
+          latestSummary: null,
+        })),
+      });
+    }
+
+    for (const parsed of reparsedTasks) {
+      const existing = existingByCode.get(parsed.taskCode);
+      if (existing) {
+        await prisma.task.update({
+          where: { id: existing.id },
+          data: {
+            title: parsed.title,
+            section: parsed.section,
+            subsection: parsed.subsection,
+            rawText: parsed.rawText,
+            sourceFilePath: parsed.sourceFilePath,
+            sourceLineStart: parsed.sourceLineStart,
+            sourceLineEnd: parsed.sourceLineEnd,
+          },
+        });
+      }
+    }
+  }
 
   publishProjectEvent({
     type: "info",

@@ -26,6 +26,9 @@ type ProjectFormState = {
   doneProgressFilePath: string;
   futureFilePath: string;
   implementationPlanFilePath: string;
+  designBriefFilePath: string;
+  interactionRulesFilePath: string;
+  visualReferencesFilePath: string;
   referenceDocs: string;
   todoProgressFilePath: string;
   buildCommand: string;
@@ -54,6 +57,9 @@ type BrainstormDraft = {
     rootPath: string;
     introFilePath: string;
     implementationPlanFilePath: string;
+    designBriefFilePath?: string;
+    interactionRulesFilePath?: string;
+    visualReferencesFilePath?: string;
     todoProgressFilePath: string;
     buildCommand: string;
     testCommand: string;
@@ -82,6 +88,9 @@ type ExistingProjectAnalysis = {
     doneProgressFilePath: string;
     futureFilePath: string;
     implementationPlanFilePath: string;
+    designBriefFilePath?: string;
+    interactionRulesFilePath?: string;
+    visualReferencesFilePath?: string;
     referenceDocs: string[];
     todoProgressFilePath: string;
     buildCommand: string;
@@ -123,6 +132,9 @@ type SuggestedProjectInput = {
   doneProgressFilePath?: string;
   futureFilePath?: string;
   implementationPlanFilePath?: string;
+  designBriefFilePath?: string;
+  interactionRulesFilePath?: string;
+  visualReferencesFilePath?: string;
   todoProgressFilePath?: string;
   buildCommand?: string;
   testCommand?: string;
@@ -172,6 +184,9 @@ const initialState: ProjectFormState = {
   doneProgressFilePath: "",
   futureFilePath: "",
   implementationPlanFilePath: "",
+  designBriefFilePath: "",
+  interactionRulesFilePath: "",
+  visualReferencesFilePath: "",
   referenceDocs: "",
   todoProgressFilePath: "",
   buildCommand: "",
@@ -385,6 +400,15 @@ export function ProjectCreateForm() {
       ...(suggested.futureFilePath !== undefined ? { futureFilePath: suggested.futureFilePath } : {}),
       ...(suggested.implementationPlanFilePath !== undefined
         ? { implementationPlanFilePath: suggested.implementationPlanFilePath }
+        : {}),
+      ...(suggested.designBriefFilePath !== undefined
+        ? { designBriefFilePath: suggested.designBriefFilePath }
+        : {}),
+      ...(suggested.interactionRulesFilePath !== undefined
+        ? { interactionRulesFilePath: suggested.interactionRulesFilePath }
+        : {}),
+      ...(suggested.visualReferencesFilePath !== undefined
+        ? { visualReferencesFilePath: suggested.visualReferencesFilePath }
         : {}),
       ...(suggested.todoProgressFilePath !== undefined
         ? { todoProgressFilePath: suggested.todoProgressFilePath }
@@ -844,6 +868,9 @@ export function ProjectCreateForm() {
           completedDoc: "已完成功能文档",
           futureDoc: "未来功能文档",
           implementationPlan: "实现计划文档",
+          designBrief: "设计简报",
+          interactionRules: "交互规则",
+          visualReferences: "视觉参考",
           extraDocs: "额外参考文档",
           testCommand: "测试命令",
           buildCommand: "构建命令",
@@ -919,6 +946,9 @@ export function ProjectCreateForm() {
           completedDoc: "Completed Features Doc",
           futureDoc: "Future Features Doc",
           implementationPlan: "Implementation Plan Doc",
+          designBrief: "Design Brief",
+          interactionRules: "Interaction Rules",
+          visualReferences: "Visual References",
           extraDocs: "Extra Reference Docs",
           testCommand: "Test Command",
           buildCommand: "Build Command",
@@ -1390,6 +1420,43 @@ export function ProjectCreateForm() {
               placeholder={text.optional}
             />
           </div>
+          <div className="field">
+            <label htmlFor="designBriefFilePath">{text.designBrief}</label>
+            <input
+              id="designBriefFilePath"
+              value={form.designBriefFilePath}
+              onChange={(event) => setForm((current) => ({ ...current, designBriefFilePath: event.target.value }))}
+              placeholder={text.optional}
+            />
+          </div>
+        </div>
+
+        <div className="grid-2">
+          <div className="field">
+            <label htmlFor="interactionRulesFilePath">{text.interactionRules}</label>
+            <input
+              id="interactionRulesFilePath"
+              value={form.interactionRulesFilePath}
+              onChange={(event) =>
+                setForm((current) => ({ ...current, interactionRulesFilePath: event.target.value }))
+              }
+              placeholder={text.optional}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="visualReferencesFilePath">{text.visualReferences}</label>
+            <input
+              id="visualReferencesFilePath"
+              value={form.visualReferencesFilePath}
+              onChange={(event) =>
+                setForm((current) => ({ ...current, visualReferencesFilePath: event.target.value }))
+              }
+              placeholder={text.optional}
+            />
+          </div>
+        </div>
+
+        <div className="grid-2">
           <div className="field">
             <label htmlFor="referenceDocs">{text.extraDocs}</label>
             <textarea

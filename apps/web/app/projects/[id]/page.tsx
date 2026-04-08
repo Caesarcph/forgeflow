@@ -8,6 +8,7 @@ import { AgentConfigPanel } from "./agent-config-panel";
 import { LiveActivity } from "./live-activity";
 import { ProjectMemoryPanel } from "./project-memory-panel";
 import { ProjectActions } from "./project-actions";
+import { ProjectConfigPanel } from "./project-config-panel";
 import { TaskBoard } from "./task-board";
 
 function projectTypeLabel(projectType: string, language: Language) {
@@ -149,72 +150,7 @@ export default async function ProjectDetailPage({
                 <h2>{text.projectConfig}</h2>
               </div>
             </div>
-            <div className="config-list">
-              <div className="config-row">
-                <strong>{text.projectType}</strong>
-                <span className="muted">{projectTypeLabel(detail.project.projectType, language)}</span>
-              </div>
-              <div className="config-row">
-                <strong>{text.projectRoot}</strong>
-                <span className="muted">{detail.project.rootPath}</span>
-              </div>
-              <div className="config-row">
-                <strong>{text.todo}</strong>
-                <span className="muted">{detail.project.todoProgressFilePath}</span>
-              </div>
-              <div className="config-row">
-                <strong>{text.primaryReference}</strong>
-                <span className="muted">{detail.project.introFilePath ?? text.notConfigured}</span>
-              </div>
-              <div className="config-row">
-                <strong>{text.completedDoc}</strong>
-                <span className="muted">{detail.project.doneProgressFilePath ?? text.notConfigured}</span>
-              </div>
-              <div className="config-row">
-                <strong>{text.futureDoc}</strong>
-                <span className="muted">{detail.project.futureFilePath ?? text.notConfigured}</span>
-              </div>
-              <div className="config-row">
-                <strong>{text.implementationPlan}</strong>
-                <span className="muted">{detail.project.implementationPlanFilePath ?? text.notConfigured}</span>
-              </div>
-              <div className="config-row">
-                <strong>{text.testCommand}</strong>
-                <span className="muted">{detail.project.testCommand ?? text.notConfigured}</span>
-              </div>
-              <div className="config-row">
-                <strong>{text.buildCommand}</strong>
-                <span className="muted">{detail.project.buildCommand ?? text.notConfigured}</span>
-              </div>
-              <div className="config-row">
-                <strong>{text.lintCommand}</strong>
-                <span className="muted">{detail.project.lintCommand ?? text.notConfigured}</span>
-              </div>
-              <div className="config-row">
-                <strong>{text.startCommand}</strong>
-                <span className="muted">{detail.project.startCommand ?? text.notConfigured}</span>
-              </div>
-              <div className="config-row">
-                <strong>{text.allowedPaths}</strong>
-                <span className="muted">
-                  {detail.project.allowedPaths.length > 0 ? detail.project.allowedPaths.join(", ") : text.notConfigured}
-                </span>
-              </div>
-              <div className="config-row config-row-block">
-                <strong>{text.extraDocs}</strong>
-                {detail.project.referenceDocs.length > 0 ? (
-                  <div className="path-list">
-                    {detail.project.referenceDocs.map((filePath) => (
-                      <div key={filePath} className="muted">
-                        {filePath}
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <span className="muted">{text.notConfigured}</span>
-                )}
-              </div>
-            </div>
+            <ProjectConfigPanel project={detail.project} />
           </section>
 
           <section className="panel">

@@ -318,9 +318,9 @@ async function executeRole(input: {
     doneProgressFilePath: input.task.project.doneProgressFilePath,
     futureFilePath: input.task.project.futureFilePath,
     implementationPlanFilePath: input.task.project.implementationPlanFilePath,
-    designBriefFilePath: null,
-    interactionRulesFilePath: null,
-    visualReferencesFilePath: null,
+    designBriefFilePath: input.task.project.designBriefFilePath,
+    interactionRulesFilePath: input.task.project.interactionRulesFilePath,
+    visualReferencesFilePath: input.task.project.visualReferencesFilePath,
     todoProgressFilePath: input.task.project.todoProgressFilePath,
     referenceDocs: parseJsonField<string[]>(input.task.project.referenceDocsJson, []),
   });
@@ -559,6 +559,9 @@ function fallbackPlannerPayload(task: TaskWithProject): PlannerPayload {
   };
 }
 
+const MODEL_ESCALATION_CHAIN = ["mimo-v2-pro-free", "qwen3.6-plus-free", "gpt-5.4"];
+const MAX_DEBUG_CYCLES_BEFORE_ESCALATION = 1;
+
 type StageMachineState = {
   currentStatus: TaskStatus;
   stage: OrchestratorStage | null;
@@ -576,7 +579,35 @@ type StageMachineState = {
   debugOrigin?: "reviewing" | "testing";
   debugReason?: string;
   debugCycles: number;
+  modelEscalations: number;
 };
+
+async function escalateModel(projectId: string, roleName: AgentRole, currentModel: string): Promise<string | null> {
+  const currentIndex = MODEL_ESCALATION_CHAIN.indexOf(currentModel);
+  const nextIndex = currentIndex === -1
+    ? MODEL_ESCALATION_CHAIN.length - 1
+    : currentIndex + 1;
+
+  if (nextIndex >= MODEL_ESCALATION_CHAIN.length) {
+    return null;
+  }
+
+  const nextModel = MODEL_ESCALATION_CHAIN[nextIndex]!;
+
+  await prisma.agentConfig.updateMany({
+    where: { projectId, roleName },
+    data: { model: nextModel },
+  });
+
+  publishProjectEvent({
+    type: "info",
+    projectId,
+    timestamp: new Date().toISOString(),
+    message: `Model escalation: ${roleName} upgraded from ${currentModel} to ${nextModel} after repeated failures.`,
+  });
+
+  return nextModel;
+}
 
 async function persistAgentArtifactsSafely(input: Parameters<typeof persistAgentRunArtifacts>[0], projectId: string, roleName: string) {
   try {
@@ -1086,12 +1117,34 @@ async function runReviewingStage(task: TaskWithProject, state: StageMachineState
     };
   }
 
-  if (state.debugCycles >= 1) {
+  if (state.debugCycles >= MAX_DEBUG_CYCLES_BEFORE_ESCALATION) {
+    const agentConfig = await getAgentConfig(task.projectId, "coder");
+    const escalatedModel = await escalateModel(task.projectId, "coder", agentConfig.model);
+
+    if (escalatedModel) {
+      await transitionTask(
+        task,
+        ORCHESTRATOR_STAGES.reviewing.activeStatus,
+        "ready_for_coding",
+        `Reviewer still unsatisfied after debug cycle. Escalating coder model to ${escalatedModel} and retrying.`,
+      );
+
+      return {
+        ...state,
+        currentStatus: "ready_for_coding" as TaskStatus,
+        stage: "coding",
+        reviewerRunId,
+        plannerPayload,
+        debugCycles: 0,
+        modelEscalations: state.modelEscalations + 1,
+      };
+    }
+
     await transitionTask(
       task,
       ORCHESTRATOR_STAGES.reviewing.activeStatus,
       "failed",
-      reviewerPayload.summary || "Reviewer rejected the change after debugger recovery was already used.",
+      reviewerPayload.summary || "Reviewer rejected the change after all model escalations exhausted.",
     );
 
     return {
@@ -1220,12 +1273,35 @@ async function runTestingStage(task: TaskWithProject, state: StageMachineState):
     }
 
     if (isFinalAttempt) {
-      if (state.debugCycles >= 1) {
+      if (state.debugCycles >= MAX_DEBUG_CYCLES_BEFORE_ESCALATION) {
+        const coderConfig = await getAgentConfig(task.projectId, "coder");
+        const escalatedModel = await escalateModel(task.projectId, "coder", coderConfig.model);
+
+        if (escalatedModel) {
+          await transitionTask(
+            task,
+            ORCHESTRATOR_STAGES.testing.activeStatus,
+            "ready_for_coding",
+            `Verification failed after debug cycle. Escalating coder model to ${escalatedModel} and retrying.`,
+          );
+
+          return {
+            ...state,
+            currentStatus: "ready_for_coding" as TaskStatus,
+            stage: "coding",
+            testerRunId: testerRun.id,
+            verificationCommand,
+            exitCode: verificationResult.exitCode ?? 1,
+            debugCycles: 0,
+            modelEscalations: state.modelEscalations + 1,
+          };
+        }
+
         await transitionTask(
           task,
           ORCHESTRATOR_STAGES.testing.activeStatus,
           "failed",
-          "Verification failed after all retry attempts. Debugger recovery has already been used.",
+          "Verification failed after all retry attempts and model escalations exhausted.",
         );
 
         return {
@@ -1395,6 +1471,7 @@ export async function runTask(taskId: string) {
     plannerPayload: null,
     result: undefined,
     debugCycles: 0,
+    modelEscalations: 0,
   };
 
   publishProjectEvent({
@@ -1636,8 +1713,11 @@ function launchAutopilotLoop(projectId: string) {
   activeProjectExecutions.add(projectId);
 
   void (async () => {
+    let completedNormally = false;
+
     try {
       await runProjectAutopilotLoop(projectId);
+      completedNormally = true;
     } catch (error) {
       publishProjectEvent({
         type: "info",
@@ -1646,7 +1726,9 @@ function launchAutopilotLoop(projectId: string) {
         message: backgroundExecutionFailedMessage("Background autopilot execution", error),
       });
     } finally {
-      await setProjectAutoRunEnabled(projectId, false).catch(() => undefined);
+      if (completedNormally) {
+        await setProjectAutoRunEnabled(projectId, false).catch(() => undefined);
+      }
       activeProjectExecutions.delete(projectId);
     }
   })();

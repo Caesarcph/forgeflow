@@ -213,6 +213,9 @@ const brainstormResultSchema = z.object({
     rootPath: z.string(),
     introFilePath: z.string(),
     implementationPlanFilePath: z.string(),
+    designBriefFilePath: z.string().optional().default(""),
+    interactionRulesFilePath: z.string().optional().default(""),
+    visualReferencesFilePath: z.string().optional().default(""),
     todoProgressFilePath: z.string(),
     buildCommand: z.string().optional().default(""),
     testCommand: z.string().optional().default(""),
@@ -246,6 +249,9 @@ const detectExistingResultSchema = z.object({
       doneProgressFilePath: z.string().optional(),
       futureFilePath: z.string().optional(),
       implementationPlanFilePath: z.string().optional(),
+      designBriefFilePath: z.string().optional(),
+      interactionRulesFilePath: z.string().optional(),
+      visualReferencesFilePath: z.string().optional(),
       referenceDocs: z.array(z.string()).optional(),
       todoProgressFilePath: z.string().optional(),
       buildCommand: z.string().optional(),
@@ -278,6 +284,9 @@ interface HeuristicBrainstormDraft {
     rootPath: string;
     introFilePath: string;
     implementationPlanFilePath: string;
+    designBriefFilePath: string;
+    interactionRulesFilePath: string;
+    visualReferencesFilePath: string;
     todoProgressFilePath: string;
     buildCommand: string;
     testCommand: string;
@@ -304,6 +313,9 @@ interface HeuristicExistingAnalysis {
     doneProgressFilePath: string;
     futureFilePath: string;
     implementationPlanFilePath: string;
+    designBriefFilePath: string;
+    interactionRulesFilePath: string;
+    visualReferencesFilePath: string;
     referenceDocs: string[];
     todoProgressFilePath: string;
     buildCommand: string;
@@ -461,6 +473,63 @@ ${milestones
 - Exit criteria: the phase is demonstrable and testable`,
   )
   .join("\n\n")}
+`;
+}
+
+function buildDesignBriefContent(name: string, idea: string, notes: string, milestones: string[]) {
+  const emphasis = notes.trim() || "Keep the first version intentionally narrow and easy to validate.";
+  const milestoneFocus = milestones[0] ?? "first working milestone";
+
+  return `# ${name} Design Brief
+
+## Product Intent
+${idea.trim()}
+
+## Experience Goals
+- Make the ${milestoneFocus} flow obvious on first use
+- Keep layouts clear enough for desktop and mobile review
+- Bias toward task completion over visual flourish
+
+## UI Brief
+- Primary user job: complete the core workflow without reading extra documentation
+- Primary success signal: the user can understand what to do next from the current screen state
+- Tone: calm, practical, and product-focused
+
+## Scope Notes
+${emphasis}
+`;
+}
+
+function buildInteractionRulesContent(name: string) {
+  return `# ${name} Interaction Rules
+
+## Core Rules
+- Every major screen should show one clear primary action
+- Destructive or irreversible actions should ask for confirmation
+- Empty states should explain the next useful step
+- Loading states should preserve layout and clarify what is happening
+- Validation errors should appear near the field that needs attention
+
+## Responsive Behavior
+- Keep the primary workflow usable on narrow screens
+- Collapse secondary metadata before hiding primary actions
+`;
+}
+
+function buildVisualReferencesContent(name: string) {
+  return `# ${name} Visual References
+
+Use this document to collect screenshots, links, and notes that should shape the UI.
+
+## References
+- Add links to screenshots, Figma frames, or comparable product examples
+- Note what should be copied, avoided, or adapted from each reference
+
+## Visual Direction Notes
+- Preferred layout patterns:
+- Preferred typography / tone:
+- Colors or branding constraints:
+- Components or interactions to avoid:
 `;
 }
 
@@ -696,11 +765,55 @@ function rankReferenceDocs(files: string[], projectHints: string[]) {
     .map((entry) => entry.filePath);
 }
 
+function pickDesignMemoryFile(input: {
+  files: string[];
+  positiveSignals: string[];
+  negativeSignals?: string[];
+}) {
+  const best = [...input.files]
+    .map((filePath) => {
+      const basename = path.basename(filePath).toLowerCase();
+      const normalizedPath = filePath.replace(/\\/g, "/").toLowerCase();
+      let score = 0;
+
+      for (const signal of input.positiveSignals) {
+        if (basename.includes(signal) || normalizedPath.includes(signal)) {
+          score += 5;
+        }
+      }
+
+      for (const signal of input.negativeSignals ?? []) {
+        if (basename.includes(signal) || normalizedPath.includes(signal)) {
+          score -= 6;
+        }
+      }
+
+      if (normalizedPath.includes("/.interface-design/")) {
+        score += 4;
+      }
+
+      if (normalizedPath.includes("/docs/")) {
+        score += 1;
+      }
+
+      return {
+        filePath,
+        score,
+      };
+    })
+    .sort((left, right) => right.score - left.score)[0];
+
+  return best && best.score > 0 ? best.filePath : "";
+}
+
 function buildSnippetShortlist(input: {
   introFilePath: string;
   doneProgressFilePath: string;
   futureFilePath: string;
   implementationPlanFilePath: string;
+  designBriefFilePath: string;
+  interactionRulesFilePath: string;
+  visualReferencesFilePath: string;
   todoProgressFilePath: string;
   referenceDocs: string[];
 }) {
@@ -711,6 +824,9 @@ function buildSnippetShortlist(input: {
         input.doneProgressFilePath,
         input.futureFilePath,
         input.implementationPlanFilePath,
+        input.designBriefFilePath,
+        input.interactionRulesFilePath,
+        input.visualReferencesFilePath,
         input.todoProgressFilePath,
         ...input.referenceDocs.slice(0, 2),
       ].filter(Boolean),
@@ -1073,6 +1189,9 @@ function heuristicBrainstormDraft(input: z.infer<typeof brainstormSchema>): Heur
   const todoPath = path.join(input.rootPath, "TODO.md");
   const introPath = path.join(docsDir, "project-brief.md");
   const implementationPlanFilePath = path.join(docsDir, "implementation-plan.md");
+  const designBriefFilePath = path.join(docsDir, "design-brief.md");
+  const interactionRulesFilePath = path.join(docsDir, "interaction-rules.md");
+  const visualReferencesFilePath = path.join(docsDir, "visual-references.md");
   const readmePath = path.join(input.rootPath, "README.md");
 
   const bootstrapFiles: StarterFileDraft[] = [
@@ -1092,6 +1211,21 @@ function heuristicBrainstormDraft(input: z.infer<typeof brainstormSchema>): Heur
       content: buildPlanContent(projectName, milestones, stack.label),
     },
     {
+      path: designBriefFilePath,
+      title: "Design Brief",
+      content: buildDesignBriefContent(projectName, input.idea, notes, milestones),
+    },
+    {
+      path: interactionRulesFilePath,
+      title: "Interaction Rules",
+      content: buildInteractionRulesContent(projectName),
+    },
+    {
+      path: visualReferencesFilePath,
+      title: "Visual References",
+      content: buildVisualReferencesContent(projectName),
+    },
+    {
       path: todoPath,
       title: "TODO",
       content: buildTodoContent(projectName, milestones),
@@ -1107,6 +1241,9 @@ function heuristicBrainstormDraft(input: z.infer<typeof brainstormSchema>): Heur
       rootPath: input.rootPath,
       introFilePath: introPath,
       implementationPlanFilePath,
+      designBriefFilePath,
+      interactionRulesFilePath,
+      visualReferencesFilePath,
       todoProgressFilePath: todoPath,
       buildCommand: stack.commands.buildCommand,
       testCommand: stack.commands.testCommand,
@@ -1120,6 +1257,7 @@ function heuristicBrainstormDraft(input: z.infer<typeof brainstormSchema>): Heur
       "Start with a single repo and a minimal structure",
       "Use TODO.md as the primary execution list",
       "Keep planning docs under docs/",
+      "Keep UI and interaction guidance in separate design memory docs from day one",
     ],
     milestones,
     openQuestions: [
@@ -1146,6 +1284,9 @@ The JSON object must have exactly these fields:
     rootPath: string,
     introFilePath: string,
     implementationPlanFilePath: string,
+    designBriefFilePath: string,
+    interactionRulesFilePath: string,
+    visualReferencesFilePath: string,
     todoProgressFilePath: string,
     buildCommand: string,
     testCommand: string,
@@ -1265,6 +1406,9 @@ Allowed top-level fields:
     doneProgressFilePath?: string,
     futureFilePath?: string,
     implementationPlanFilePath?: string,
+    designBriefFilePath?: string,
+    interactionRulesFilePath?: string,
+    visualReferencesFilePath?: string,
     referenceDocs?: string[],
     todoProgressFilePath?: string,
     buildCommand?: string,
@@ -1338,6 +1482,21 @@ async function heuristicDetectExistingProject(
   const doneProgressFilePath = pickBestFile(uniqueMarkdownFiles, ["completed", "done", "finished"]) ?? "";
   const futureFilePath = pickBestFile(uniqueMarkdownFiles, ["future", "roadmap", "backlog"]) ?? "";
   const implementationPlanFilePath = pickBestFile(uniqueMarkdownFiles, ["implementation", "plan"]) ?? "";
+  const designBriefFilePath = pickDesignMemoryFile({
+    files: uniqueMarkdownFiles,
+    positiveSignals: ["design-brief", "ui-brief", "product-design"],
+    negativeSignals: ["project-brief", "implementation", "todo"],
+  });
+  const interactionRulesFilePath = pickDesignMemoryFile({
+    files: uniqueMarkdownFiles,
+    positiveSignals: ["interaction-rules", "interaction", "ux-rules"],
+    negativeSignals: ["project-brief", "implementation", "todo"],
+  });
+  const visualReferencesFilePath = pickDesignMemoryFile({
+    files: uniqueMarkdownFiles,
+    positiveSignals: ["visual-references", "visual-reference", "ui-reference", "wireframe", "mockup"],
+    negativeSignals: ["project-brief", "implementation", "todo"],
+  });
   const introFilePath = pickIntroFile(uniqueMarkdownFiles, projectHints) ?? "";
 
   if (resolvedTaskSource?.viaLinkedDoc) {
@@ -1347,7 +1506,16 @@ async function heuristicDetectExistingProject(
   }
 
   const selectedFiles = new Set(
-    [todoProgressFilePath, doneProgressFilePath, futureFilePath, implementationPlanFilePath, introFilePath].filter(Boolean),
+    [
+      todoProgressFilePath,
+      doneProgressFilePath,
+      futureFilePath,
+      implementationPlanFilePath,
+      designBriefFilePath,
+      interactionRulesFilePath,
+      visualReferencesFilePath,
+      introFilePath,
+    ].filter(Boolean),
   );
   const referenceDocs = rankReferenceDocs(
     uniqueMarkdownFiles.filter((filePath) => !selectedFiles.has(filePath)),
@@ -1365,6 +1533,9 @@ async function heuristicDetectExistingProject(
     doneProgressFilePath,
     futureFilePath,
     implementationPlanFilePath,
+    designBriefFilePath,
+    interactionRulesFilePath,
+    visualReferencesFilePath,
     todoProgressFilePath,
     referenceDocs,
   });
@@ -1412,6 +1583,9 @@ async function heuristicDetectExistingProject(
       doneProgressFilePath,
       futureFilePath,
       implementationPlanFilePath,
+      designBriefFilePath,
+      interactionRulesFilePath,
+      visualReferencesFilePath,
       referenceDocs,
       todoProgressFilePath,
       buildCommand,
@@ -1443,6 +1617,9 @@ async function heuristicDetectExistingProject(
         : "TODO source not found",
       introFilePath ? "Located primary reference doc" : "Primary reference doc not found",
       implementationPlanFilePath ? "Located implementation plan doc" : "Implementation plan doc not found",
+      designBriefFilePath ? "Located design brief" : "Design brief not found",
+      interactionRulesFilePath ? "Located interaction rules" : "Interaction rules not found",
+      visualReferencesFilePath ? "Located visual references" : "Visual references not found",
     ],
   };
 }
@@ -1536,6 +1713,15 @@ async function llmDetectExistingProject(input: z.infer<typeof detectExistingSche
             : {}),
           ...(llmResult.suggestedProject.implementationPlanFilePath?.trim()
             ? { implementationPlanFilePath: llmResult.suggestedProject.implementationPlanFilePath }
+            : {}),
+          ...(llmResult.suggestedProject.designBriefFilePath?.trim()
+            ? { designBriefFilePath: llmResult.suggestedProject.designBriefFilePath }
+            : {}),
+          ...(llmResult.suggestedProject.interactionRulesFilePath?.trim()
+            ? { interactionRulesFilePath: llmResult.suggestedProject.interactionRulesFilePath }
+            : {}),
+          ...(llmResult.suggestedProject.visualReferencesFilePath?.trim()
+            ? { visualReferencesFilePath: llmResult.suggestedProject.visualReferencesFilePath }
             : {}),
           ...(llmResult.suggestedProject.todoProgressFilePath?.trim()
             ? { todoProgressFilePath: llmResult.suggestedProject.todoProgressFilePath }
