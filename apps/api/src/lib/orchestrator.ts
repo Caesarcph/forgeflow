@@ -1213,7 +1213,9 @@ async function runTestingStage(task: TaskWithProject, state: StageMachineState):
     const verificationResult = await runVerification(task, verificationCommand);
     const success = verificationResult.exitCode === 0;
     const isFinalAttempt = success || attempt >= policy.maxAttempts;
-    const testerStatus: TaskStatus = success ? "waiting_human" : "failed";
+    const testerStatus: TaskStatus = success
+      ? (task.autoApprovable ? "done" : "waiting_human")
+      : "failed";
     const testerRun = await createRun({
       projectId: task.projectId,
       taskId: task.id,
@@ -1222,7 +1224,9 @@ async function runTestingStage(task: TaskWithProject, state: StageMachineState):
       status: success ? testerStatus : isFinalAttempt ? "failed" : "retrying",
       inputSummary: verificationCommand,
       outputSummary: success
-        ? "Verification passed. Waiting for human approval and writeback."
+        ? (task.autoApprovable
+            ? "Verification passed. Auto-approved (autoApprovable task)."
+            : "Verification passed. Waiting for human approval and writeback.")
         : `Attempt ${attempt}/${policy.maxAttempts} failed: ${
             verificationResult.stderr || verificationResult.stdout || "Verification failed"
           }`,
@@ -1269,7 +1273,9 @@ async function runTestingStage(task: TaskWithProject, state: StageMachineState):
         task,
         ORCHESTRATOR_STAGES.testing.activeStatus,
         testerStatus,
-        "Verification passed. Approve task to write back progress.",
+        task.autoApprovable
+          ? "Verification passed. Auto-approved by ForgeFlow."
+          : "Verification passed. Approve task to write back progress.",
       );
 
       return {

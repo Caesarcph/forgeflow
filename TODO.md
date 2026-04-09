@@ -54,8 +54,10 @@ Track the highest-priority engineering work here. Mark items with `- [x]` when d
 - [ ] Add project configuration editing in the UI, including task source path updates after import
 - [x] Add a dedicated roadmap importer that can merge newly added TODO sections into an existing project
   <!-- forgeflow: Auto-approved by ForgeFlow autopilot after successful verification -->
-- [ ] Show the final intake engine clearly in the UI: `opencode`, `heuristic`, or `heuristic-fallback`
-- [ ] Show why a model refine step failed, including output tail and structured parsing reason
+- [x] Show the final intake engine clearly in the UI: `opencode`, `heuristic`, or `heuristic-fallback`
+  <!-- forgeflow: Auto-approved by ForgeFlow autopilot after successful verification -->
+- [x] Show why a model refine step failed, including output tail and structured parsing reason
+  <!-- forgeflow: Auto-approved by ForgeFlow autopilot after successful verification -->
 - [ ] Add a dry-run mode that simulates writeback and file sync without mutating the repo
 - [ ] Add explicit human approval gates for risky file writes and shell commands
 - [ ] Add a “safe autopilot” mode that only runs low-risk documentation and UI text tasks continuously
