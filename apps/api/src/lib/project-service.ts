@@ -107,17 +107,17 @@ function normalizeOptionalString(value?: string): string | null {
 }
 
 const DEFAULT_AGENT_CONFIGS: Record<string, { provider: string; model: string }> = {
-  planner:  { provider: "opencode", model: "mimo-v2-pro-free" },
-  coder:    { provider: "openai",   model: "gpt-5.4" },
-  reviewer: { provider: "opencode", model: "qwen3.6-plus-free" },
-  tester:   { provider: "openai",   model: "gpt-5.4" },
-  debugger: { provider: "openai",   model: "gpt-5.4" },
+  planner:  { provider: "nvidia", model: "glm-5" },
+  coder:    { provider: "nvidia", model: "glm-5" },
+  reviewer: { provider: "nvidia", model: "glm-5" },
+  tester:   { provider: "nvidia", model: "glm-5" },
+  debugger: { provider: "nvidia", model: "glm-5" },
 };
 
 function defaultAgentConfig(roleName: string) {
   const basePrompt =
     defaultPrompts[roleName as keyof typeof defaultPrompts] ?? "Role prompt is not configured yet.";
-  const defaults = DEFAULT_AGENT_CONFIGS[roleName] ?? { provider: "openai", model: "gpt-5.4" };
+  const defaults = DEFAULT_AGENT_CONFIGS[roleName] ?? { provider: "nvidia", model: "glm-5" };
 
   return {
     roleName,

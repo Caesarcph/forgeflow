@@ -52,7 +52,8 @@ Track the highest-priority engineering work here. Mark items with `- [x]` when d
 
 - [ ] Add first-class design memory for UI briefs, interaction rules, and visual references
 - [ ] Add project configuration editing in the UI, including task source path updates after import
-- [ ] Add a dedicated roadmap importer that can merge newly added TODO sections into an existing project
+- [x] Add a dedicated roadmap importer that can merge newly added TODO sections into an existing project
+  <!-- forgeflow: Auto-approved by ForgeFlow autopilot after successful verification -->
 - [ ] Show the final intake engine clearly in the UI: `opencode`, `heuristic`, or `heuristic-fallback`
 - [ ] Show why a model refine step failed, including output tail and structured parsing reason
 - [ ] Add a dry-run mode that simulates writeback and file sync without mutating the repo

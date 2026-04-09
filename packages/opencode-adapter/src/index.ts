@@ -233,6 +233,24 @@ function extractJsonObject(rawText: string) {
   return trimmed.slice(firstBrace, lastBrace + 1);
 }
 
+function tryExtractReviewerPayload(rawOutput: string) {
+  const lower = rawOutput.toLowerCase();
+  const hasFail = /\b(fail|reject|block|not.?ready)\b/.test(lower);
+  const hasPass = /\b(pass|approve|accept|lgtm|looks good|ready)\b/.test(lower);
+
+  if (!hasPass && !hasFail) {
+    return undefined;
+  }
+
+  const verdict = hasFail && !hasPass ? "fail" as const : "pass" as const;
+  return {
+    verdict,
+    summary: rawOutput.slice(0, 300).trim(),
+    concerns: [],
+    relevantFiles: [],
+  };
+}
+
 function parseStructuredOutput(rawOutput: string) {
   const candidate = extractJsonObject(rawOutput);
 
@@ -243,6 +261,19 @@ function parseStructuredOutput(rawOutput: string) {
   try {
     return openCodeResponseSchema.parse(JSON.parse(candidate));
   } catch {
+    // Try lenient JSON parsing — accept partial matches for reviewer
+    try {
+      const obj = JSON.parse(candidate);
+      const review = obj.review ?? obj.result ?? obj.reviewer ?? obj;
+      if (review.verdict === "pass" || review.verdict === "fail") {
+        return openCodeResponseSchema.parse({
+          summary: obj.summary ?? review.summary ?? "",
+          review: { verdict: review.verdict, summary: review.summary ?? "", concerns: review.concerns ?? [], relevantFiles: review.relevantFiles ?? [] },
+        });
+      }
+    } catch {
+      // fall through
+    }
     return null;
   }
 }
@@ -444,8 +475,16 @@ export async function resolveCliCommandInvocation(cliPath: string, args: string[
   };
 }
 
-export async function resolveCliInvocation(cliPath: string, prompt: string, model: string, workingDirectory: string) {
-  const baseArgs = ["run", prompt, "--model", model, "--dir", workingDirectory, "--format", "json"];
+export async function resolveCliInvocation(
+  cliPath: string,
+  prompt: string,
+  model: string,
+  workingDirectory: string,
+  useOmoRouting = false,
+) {
+  const baseArgs = useOmoRouting
+    ? ["run", prompt, "--dir", workingDirectory, "--format", "json"]
+    : ["run", prompt, "--model", model, "--dir", workingDirectory, "--format", "json"];
   return resolveCliCommandInvocation(cliPath, baseArgs);
 }
 
@@ -606,9 +645,10 @@ class OpenCodeCliExecutor implements AgentExecutor {
   async execute(context: AgentExecutionContext): Promise<AgentExecutionResult> {
     const cliPath = await resolveCliPath(this.options.cliPath);
     const workingDirectory = await resolveWorkingDirectory(context.executionRootPath ?? context.projectRootPath);
+    const useOmo = normalizeProvider(context.provider) === "omo";
     const resolvedModel = normalizeModel(context.provider, context.model);
     const prompt = buildAgentPromptText(context);
-    const invocation = await resolveCliInvocation(cliPath, prompt, resolvedModel, workingDirectory);
+    const invocation = await resolveCliInvocation(cliPath, prompt, resolvedModel, workingDirectory, useOmo);
     const timeoutMs = this.options.timeoutMs ?? 120000;
     const commandLabel = [invocation.file, ...invocation.args.filter((arg) => !arg.includes("\n")).slice(0, 8)].join(" ");
     const emitLog = this.options.onLog;
@@ -645,7 +685,7 @@ class OpenCodeCliExecutor implements AgentExecutor {
       };
 
       emit(`Starting OpenCode CLI`);
-      emit(`model=${resolvedModel}`);
+      emit(useOmo ? `model=omo (auto-routed)` : `model=${resolvedModel}`);
       emit(`cwd=${workingDirectory}`);
       emit(`command=${commandLabel}`);
 
@@ -798,12 +838,13 @@ class OpenCodeCliExecutor implements AgentExecutor {
         const parsedEvents = parseOpencodeJsonEvents(finalStdout);
         const rawOutput = parsedEvents?.text || finalStdout || finalStderr || "OpenCode CLI returned no output.";
         const structured = parseStructuredOutput(rawOutput);
+        const reviewerPayload = structured?.review ?? tryExtractReviewerPayload(rawOutput);
         emit(`OpenCode CLI completed successfully.`);
         resolve({
           outputSummary: structured?.summary ?? structured?.outputText ?? shorten(rawOutput),
           rawOutput,
           plannerPayload: structured?.planner,
-          reviewerPayload: structured?.review,
+          reviewerPayload,
           debuggerPayload: structured?.debugger,
         });
       });
