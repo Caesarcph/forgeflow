@@ -961,15 +961,50 @@ async function runCodingStage(task: TaskWithProject, state: StageMachineState): 
     systemPromptFallback: "Implement the task with minimal, focused changes.",
     inputSummary: plannerPayload.goal,
   });
+
+  const coderOutputSummary = coderExecution.usedFallbackModel
+    ? `${coderExecution.result.outputSummary} (fallback model: ${coderExecution.actualModel})`
+    : coderExecution.result.outputSummary;
+
+  const coderOutputLooksLikeError = /^error:|not found|CLI failed|UnknownError|ProviderModelNotFoundError/i.test(
+    coderOutputSummary.trim(),
+  );
+
+  if (coderOutputLooksLikeError) {
+    const failRun = await updateRun({
+      runId: coderExecution.runId,
+      projectId: task.projectId,
+      taskId: task.id,
+      roleName: "coder",
+      status: "failed",
+      outputSummary: coderOutputSummary,
+    });
+
+    await transitionTask(
+      task,
+      ORCHESTRATOR_STAGES.coding.activeStatus,
+      "failed",
+      `Coder output looks like an error, not real code: ${coderOutputSummary.slice(0, 200)}`,
+    );
+
+    return {
+      ...state,
+      currentStatus: "failed" as TaskStatus,
+      stage: null,
+      plannerPayload,
+      coderRunId: failRun.id,
+      result: "failed",
+      message: coderOutputSummary,
+    };
+  }
+
   const coderRun = await updateRun({
     runId: coderExecution.runId,
     projectId: task.projectId,
     taskId: task.id,
     roleName: "coder",
     status: "done",
-    outputSummary: coderExecution.usedFallbackModel
-      ? `${coderExecution.result.outputSummary} (fallback model: ${coderExecution.actualModel})`
-      : coderExecution.result.outputSummary,
+    outputSummary: coderOutputSummary,
   });
 
   await persistAgentArtifactsSafely(
