@@ -560,7 +560,7 @@ function fallbackPlannerPayload(task: TaskWithProject): PlannerPayload {
   };
 }
 
-const MODEL_ESCALATION_CHAIN = ["mimo-v2-pro-free", "qwen3.6-plus-free", "gpt-5.4"];
+const MODEL_ESCALATION_CHAIN = ["glm-5", "nvidia/z-ai/glm4.7", "nvidia/deepseek-ai/deepseek-v3.2"];
 const MAX_DEBUG_CYCLES_BEFORE_ESCALATION = 1;
 const MAX_STAGE_ITERATIONS = 12;
 
