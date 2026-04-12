@@ -560,8 +560,8 @@ function fallbackPlannerPayload(task: TaskWithProject): PlannerPayload {
   };
 }
 
-const MODEL_ESCALATION_CHAIN = ["glm-5", "nvidia/z-ai/glm4.7", "nvidia/deepseek-ai/deepseek-v3.2"];
-const MAX_DEBUG_CYCLES_BEFORE_ESCALATION = 1;
+const MODEL_ESCALATION_CHAIN = ["glm-5", "openai/gpt-5.4"];
+const MAX_DEBUG_CYCLES_BEFORE_ESCALATION = 2;
 const MAX_STAGE_ITERATIONS = 12;
 
 type StageMachineState = {
@@ -584,7 +584,7 @@ type StageMachineState = {
   modelEscalations: number;
 };
 
-async function escalateModel(projectId: string, roleName: AgentRole, currentModel: string): Promise<string | null> {
+async function escalateAllModels(projectId: string, currentModel: string): Promise<string | null> {
   const currentIndex = MODEL_ESCALATION_CHAIN.indexOf(currentModel);
   const nextIndex = currentIndex === -1
     ? MODEL_ESCALATION_CHAIN.length - 1
@@ -596,19 +596,33 @@ async function escalateModel(projectId: string, roleName: AgentRole, currentMode
 
   const nextModel = MODEL_ESCALATION_CHAIN[nextIndex]!;
 
-  await prisma.agentConfig.updateMany({
-    where: { projectId, roleName },
-    data: { model: nextModel },
-  });
+  const allRoles: AgentRole[] = ["planner", "coder", "reviewer", "debugger"];
+  for (const role of allRoles) {
+    await prisma.agentConfig.updateMany({
+      where: { projectId, roleName: role },
+      data: { model: nextModel },
+    });
+  }
 
   publishProjectEvent({
     type: "info",
     projectId,
     timestamp: new Date().toISOString(),
-    message: `Model escalation: ${roleName} upgraded from ${currentModel} to ${nextModel} after repeated failures.`,
+    message: `Model escalation: ALL agents upgraded from ${currentModel} to ${nextModel} after repeated failures.`,
   });
 
   return nextModel;
+}
+
+async function resetModelsToDefault(projectId: string): Promise<void> {
+  const defaultModel = MODEL_ESCALATION_CHAIN[0] ?? "glm-5";
+  const allRoles: AgentRole[] = ["planner", "coder", "reviewer", "debugger"];
+  for (const role of allRoles) {
+    await prisma.agentConfig.updateMany({
+      where: { projectId, roleName: role },
+      data: { model: defaultModel },
+    });
+  }
 }
 
 async function persistAgentArtifactsSafely(input: Parameters<typeof persistAgentRunArtifacts>[0], projectId: string, roleName: string) {
@@ -1165,7 +1179,7 @@ async function runReviewingStage(task: TaskWithProject, state: StageMachineState
 
   if (state.debugCycles >= MAX_DEBUG_CYCLES_BEFORE_ESCALATION) {
     const agentConfig = await getAgentConfig(task.projectId, "coder");
-    const escalatedModel = await escalateModel(task.projectId, "coder", agentConfig.model);
+    const escalatedModel = await escalateAllModels(task.projectId, agentConfig.model);
 
     if (escalatedModel) {
       await transitionTask(
@@ -1327,7 +1341,7 @@ async function runTestingStage(task: TaskWithProject, state: StageMachineState):
     if (isFinalAttempt) {
       if (state.debugCycles >= MAX_DEBUG_CYCLES_BEFORE_ESCALATION) {
         const coderConfig = await getAgentConfig(task.projectId, "coder");
-        const escalatedModel = await escalateModel(task.projectId, "coder", coderConfig.model);
+        const escalatedModel = await escalateAllModels(task.projectId, coderConfig.model);
 
         if (escalatedModel) {
           await transitionTask(
@@ -1680,13 +1694,14 @@ async function runProjectAutopilotLoop(projectId: string) {
     }
 
     if (run.result === "failed" || run.result === "blocked") {
+      await resetModelsToDefault(projectId);
       publishProjectEvent({
         type: "info",
         projectId,
         timestamp: new Date().toISOString(),
-        message: `Autopilot stopped on ${run.selectedTaskCode}: ${run.result}.`,
+        message: `Autopilot skipping ${run.selectedTaskCode}: ${run.result}. Moving to next task.`,
       });
-      return;
+      continue;
     }
 
     if (run.result === "waiting_human") {
@@ -1702,6 +1717,7 @@ async function runProjectAutopilotLoop(projectId: string) {
 
       if (task?.autoApprovable) {
         await approveTask(run.selectedTaskId, "Auto-approved by ForgeFlow autopilot after successful verification");
+        await resetModelsToDefault(projectId);
         completedTasks += 1;
 
         publishProjectEvent({
@@ -1724,6 +1740,7 @@ async function runProjectAutopilotLoop(projectId: string) {
     }
 
     if (run.result === "done") {
+      await resetModelsToDefault(projectId);
       completedTasks += 1;
       continue;
     }
