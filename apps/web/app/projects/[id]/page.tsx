@@ -19,6 +19,18 @@ function projectTypeLabel(projectType: string, language: Language) {
   return projectType === "existing" ? "Existing Project" : "New Project";
 }
 
+function intakeEngineLabel(engine: string | null, language: Language) {
+  if (!engine) {
+    return language === "zh" ? "未记录" : "Not recorded";
+  }
+
+  if (engine === "heuristic-forced") {
+    return "heuristic";
+  }
+
+  return engine;
+}
+
 export default async function ProjectDetailPage({
   params,
 }: {
@@ -47,6 +59,7 @@ export default async function ProjectDetailPage({
           completedDoc: "已完成功能文档",
           futureDoc: "未来规划文档",
           implementationPlan: "实现计划文档",
+          intakeEngine: "最终 Intake 引擎",
           extraDocs: "额外参考文档",
           testCommand: "测试命令",
           buildCommand: "构建命令",
@@ -77,6 +90,7 @@ export default async function ProjectDetailPage({
           completedDoc: "Completed Features Doc",
           futureDoc: "Future Roadmap Doc",
           implementationPlan: "Implementation Plan",
+          intakeEngine: "Final Intake Engine",
           extraDocs: "Extra Reference Docs",
           testCommand: "Test Command",
           buildCommand: "Build Command",
@@ -127,6 +141,10 @@ export default async function ProjectDetailPage({
             <div className="project-stat">
               <span className="muted">{text.failed}</span>
               <strong>{detail.summary.counts.failed}</strong>
+            </div>
+            <div className="project-stat">
+              <span className="muted">{text.intakeEngine}</span>
+              <strong>{intakeEngineLabel(detail.project.intakeEngine, language)}</strong>
             </div>
           </div>
         </div>

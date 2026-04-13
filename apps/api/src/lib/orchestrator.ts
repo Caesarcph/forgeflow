@@ -562,6 +562,41 @@ function fallbackPlannerPayload(task: TaskWithProject): PlannerPayload {
   };
 }
 
+async function autoCommitTaskChanges(
+  projectRootPath: string,
+  taskCode: string,
+  taskTitle: string,
+): Promise<boolean> {
+  try {
+    const statusResult = await execaCommand("git status --porcelain", {
+      cwd: projectRootPath,
+      shell: true,
+      reject: false,
+    });
+
+    if (!statusResult.stdout?.trim()) {
+      return false;
+    }
+
+    await execaCommand("git add -A", {
+      cwd: projectRootPath,
+      shell: true,
+      reject: false,
+    });
+
+    const commitMsg = `[ForgeFlow] ${taskCode}: ${taskTitle}`;
+    await execaCommand(`git commit -m "${commitMsg.replace(/"/g, '\\"')}"`, {
+      cwd: projectRootPath,
+      shell: true,
+      reject: false,
+    });
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 const MODEL_ESCALATION_CHAIN = ["glm-5", "openai/gpt-5.4"];
 const MAX_DEBUG_CYCLES_BEFORE_ESCALATION = 2;
 const MAX_STAGE_ITERATIONS = 12;
@@ -1320,6 +1355,20 @@ async function runTestingStage(task: TaskWithProject, state: StageMachineState):
     });
 
     if (success) {
+      const committed = await autoCommitTaskChanges(
+        task.project.rootPath,
+        task.taskCode,
+        task.title,
+      );
+      if (committed) {
+        publishProjectEvent({
+          type: "info",
+          projectId: task.projectId,
+          timestamp: new Date().toISOString(),
+          message: `Auto-committed changes for ${task.taskCode} to git.`,
+        });
+      }
+
       await transitionTask(
         task,
         ORCHESTRATOR_STAGES.testing.activeStatus,

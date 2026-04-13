@@ -7,6 +7,7 @@ export interface ProjectSummary {
   name: string;
   projectType?: string;
   rootPath: string;
+  intakeEngine: string | null;
   status: string;
   totalTasks: number;
   doneTasks: number;
@@ -40,6 +41,7 @@ export interface ProjectDetailResponse {
       name: string;
       projectType: string;
       rootPath: string;
+      intakeEngine: string | null;
       introFilePath: string | null;
       doneProgressFilePath: string | null;
       futureFilePath: string | null;

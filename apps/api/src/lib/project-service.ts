@@ -29,6 +29,7 @@ const projectInputSchema = z.object({
   name: z.string().min(1),
   projectType: z.enum(["greenfield", "existing"]).optional().default("greenfield"),
   rootPath: z.string().min(1),
+  intakeEngine: z.enum(["opencode", "heuristic", "heuristic-fallback"]).optional(),
   introFilePath: z.string().optional().or(z.literal("")),
   doneProgressFilePath: z.string().optional().or(z.literal("")),
   futureFilePath: z.string().optional().or(z.literal("")),
@@ -229,6 +230,7 @@ function serializeProject(project: {
   name: string;
   projectType: string;
   rootPath: string;
+  intakeEngine: string | null;
   introFilePath: string | null;
   doneProgressFilePath: string | null;
   futureFilePath: string | null;
@@ -256,6 +258,7 @@ function serializeProject(project: {
     name: project.name,
     projectType: project.projectType,
     rootPath: project.rootPath,
+    intakeEngine: project.intakeEngine,
     introFilePath: project.introFilePath,
     doneProgressFilePath: project.doneProgressFilePath,
     futureFilePath: project.futureFilePath,
@@ -398,6 +401,7 @@ export async function createProject(rawInput: unknown) {
       name: input.name.trim(),
       projectType: input.projectType,
       rootPath: input.rootPath.trim(),
+      intakeEngine: input.intakeEngine ?? null,
       introFilePath: normalizeOptionalString(input.introFilePath),
       doneProgressFilePath: normalizeOptionalString(input.doneProgressFilePath),
       futureFilePath: normalizeOptionalString(input.futureFilePath),
@@ -495,6 +499,7 @@ export async function listProjects() {
       name: project.name,
       projectType: project.projectType,
       rootPath: project.rootPath,
+      intakeEngine: project.intakeEngine,
       status: getProjectStatus(taskStatuses),
       totalTasks: project.tasks.length,
       doneTasks: counts.done,

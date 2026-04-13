@@ -752,6 +752,11 @@ export function ProjectCreateForm() {
     setFeedback(mode === "existing" ? "Importing existing project..." : "Creating project from the confirmed draft...");
 
     try {
+      const finalIntakeEngine =
+        mode === "greenfield"
+          ? (draft ? normalizeIntakeEngine(draft.engine) : null)
+          : (analysis ? normalizeIntakeEngine(analysis.engine) : null);
+
       const response = await fetch(`${API_BASE_URL}/projects`, {
         method: "POST",
         headers: {
@@ -760,6 +765,7 @@ export function ProjectCreateForm() {
         body: JSON.stringify({
           ...form,
           projectType: mode,
+          intakeEngine: finalIntakeEngine,
           referenceDocs: form.referenceDocs
             .split("\n")
             .map((item) => item.trim())
@@ -848,6 +854,7 @@ export function ProjectCreateForm() {
           inspecting: "识别中...",
           inspectImport: "识别 / 细化导入",
           conversation: "对话记录",
+          finalIntakeEngine: "最终 Intake 引擎",
           draftPreview: "草案预览",
           summary: "摘要",
           assumptions: "前提假设",
@@ -926,6 +933,7 @@ export function ProjectCreateForm() {
           inspecting: "Inspecting...",
           inspectImport: "Inspect / Refine Import",
           conversation: "Conversation",
+          finalIntakeEngine: "Final Intake Engine",
           draftPreview: "Draft Preview",
           summary: "Summary",
           assumptions: "Assumptions",
@@ -1212,7 +1220,7 @@ export function ProjectCreateForm() {
         <section className="preview-panel">
           <h3>{text.draftPreview}</h3>
           <div className="inline-meta">
-            <span className="tag">{normalizeIntakeEngine(draft.engine)}</span>
+            <span className="tag">{text.finalIntakeEngine}: {normalizeIntakeEngine(draft.engine)}</span>
             <span className="tag">{draft.provider}</span>
             <span className="tag">{draft.model}</span>
           </div>
@@ -1281,7 +1289,7 @@ export function ProjectCreateForm() {
         <section className="preview-panel">
           <h3>{text.projectAnalysis}</h3>
           <div className="inline-meta">
-            <span className="tag">{normalizeIntakeEngine(analysis.engine)}</span>
+            <span className="tag">{text.finalIntakeEngine}: {normalizeIntakeEngine(analysis.engine)}</span>
             <span className="tag">{analysis.provider}</span>
             <span className="tag">{analysis.model}</span>
           </div>

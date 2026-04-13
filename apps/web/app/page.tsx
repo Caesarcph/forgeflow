@@ -14,6 +14,18 @@ function projectTypeLabel(projectType: string | undefined, language: Language) {
   return projectType === "existing" ? "Existing Project" : "New Project";
 }
 
+function intakeEngineLabel(engine: string | null, language: Language) {
+  if (!engine) {
+    return language === "zh" ? "未记录" : "Not recorded";
+  }
+
+  if (engine === "heuristic-forced") {
+    return "heuristic";
+  }
+
+  return engine;
+}
+
 export default async function HomePage() {
   const cookieStore = await cookies();
   const language = resolveLanguage(cookieStore.get(LANGUAGE_COOKIE_NAME)?.value);
@@ -44,6 +56,7 @@ export default async function HomePage() {
           waiting: "待人工",
           failed: "失败",
           status: "状态",
+          intakeEngine: "最终 Intake 引擎",
         }
       : {
           eyebrow: "ForgeFlow Control Deck",
@@ -68,6 +81,7 @@ export default async function HomePage() {
           waiting: "waiting",
           failed: "failed",
           status: "status",
+          intakeEngine: "Final Intake Engine",
         };
 
   return (
@@ -137,6 +151,7 @@ export default async function HomePage() {
                   <div className="inline-meta">
                     <span className="tag">{projectTypeLabel(project.projectType, language)}</span>
                     <span className="tag">{text.status}: {project.status}</span>
+                    <span className="tag">{text.intakeEngine}: {intakeEngineLabel(project.intakeEngine, language)}</span>
                   </div>
                 </div>
 
