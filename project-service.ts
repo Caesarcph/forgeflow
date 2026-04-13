@@ -15,7 +15,6 @@ import { defaultPrompts } from "@forgeflow/prompts";
 import { updateCheckboxInFile, type DryRunResult } from "@forgeflow/task-writeback";
 import { z } from "zod";
 
-import { env } from "./env.js";
 import { publishProjectEvent } from "./events.js";
 import { readRollbackManifest, restoreRollbackManifest } from "./git-run-tracking.js";
 import {
@@ -109,10 +108,10 @@ function normalizeOptionalString(value?: string): string | null {
 }
 
 const DEFAULT_AGENT_CONFIGS: Record<string, { provider: string; model: string }> = {
-  planner:  { provider: "nvidia", model: "glm-5" },
-  coder:    { provider: "nvidia", model: "glm-5" },
+  planner: { provider: "nvidia", model: "glm-5" },
+  coder: { provider: "nvidia", model: "glm-5" },
   reviewer: { provider: "nvidia", model: "glm-5" },
-  tester:   { provider: "nvidia", model: "glm-5" },
+  tester: { provider: "nvidia", model: "glm-5" },
   debugger: { provider: "nvidia", model: "glm-5" },
 };
 
@@ -766,19 +765,22 @@ export async function rebuildProjectMemory(projectId: string) {
     },
   });
 
-  const snapshot = await buildProjectMemorySnapshot({
-    introFilePath: project.introFilePath,
-    doneProgressFilePath: project.doneProgressFilePath,
-    futureFilePath: project.futureFilePath,
-    implementationPlanFilePath: project.implementationPlanFilePath,
-    designBriefFilePath: project.designBriefFilePath,
-    interactionRulesFilePath: project.interactionRulesFilePath,
-    visualReferencesFilePath: project.visualReferencesFilePath,
-    todoProgressFilePath: project.todoProgressFilePath,
-    referenceDocs: parseJsonField<string[]>(project.referenceDocsJson, []),
-  }, {
-    preferPersisted: false,
-  });
+  const snapshot = await buildProjectMemorySnapshot(
+    {
+      introFilePath: project.introFilePath,
+      doneProgressFilePath: project.doneProgressFilePath,
+      futureFilePath: project.futureFilePath,
+      implementationPlanFilePath: project.implementationPlanFilePath,
+      designBriefFilePath: project.designBriefFilePath,
+      interactionRulesFilePath: project.interactionRulesFilePath,
+      visualReferencesFilePath: project.visualReferencesFilePath,
+      todoProgressFilePath: project.todoProgressFilePath,
+      referenceDocs: parseJsonField<string[]>(project.referenceDocsJson, []),
+    },
+    {
+      preferPersisted: false,
+    },
+  );
 
   await prisma.project.update({
     where: {
@@ -922,7 +924,6 @@ export async function writebackTask(
   summary?: string,
   options?: { dryRun?: boolean },
 ): Promise<WritebackDryRunResult | WritebackResult> {
-  const effectiveDryRun = options?.dryRun ?? env.DRY_RUN;
   const task = await prisma.task.findUniqueOrThrow({
     where: {
       id: taskId,
@@ -937,10 +938,10 @@ export async function writebackTask(
     lineNumber: task.sourceLineStart,
     checked: true,
     summary,
-    dryRun: effectiveDryRun,
+    dryRun: options?.dryRun,
   });
 
-  if (effectiveDryRun && writebackResult) {
+  if (options?.dryRun && writebackResult) {
     return {
       dryRun: true,
       task: serializeTask(task),
@@ -976,7 +977,6 @@ export async function approveTask(
   summary?: string,
   options?: { dryRun?: boolean },
 ): Promise<WritebackDryRunResult | WritebackResult> {
-  const effectiveDryRun = options?.dryRun ?? env.DRY_RUN;
   const task = await prisma.task.findUniqueOrThrow({
     where: {
       id: taskId,
@@ -1003,10 +1003,10 @@ export async function approveTask(
     lineNumber: task.sourceLineStart,
     checked: true,
     summary,
-    dryRun: effectiveDryRun,
+    dryRun: options?.dryRun,
   });
 
-  if (effectiveDryRun && writebackResult) {
+  if (options?.dryRun && writebackResult) {
     return {
       dryRun: true,
       task: serializeTask(task),

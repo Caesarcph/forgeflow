@@ -28,7 +28,7 @@ import { parseJsonField, prisma } from "@forgeflow/db";
 import { env } from "./env.js";
 import { assertSafeShellCommand, extractShellToolUseFromAgentLog } from "./command-safety.js";
 import { assertBoundaryValidation, captureProjectSnapshot, diffProjectSnapshots, validateBoundaryChanges } from "./execution-boundaries.js";
-import { createExecutionWorkspace, syncWorkspaceChangesToProject } from "./execution-workspace.js";
+import { createExecutionWorkspace, syncWorkspaceChangesToProject, type SyncDryRunResult } from "./execution-workspace.js";
 import { publishProjectEvent } from "./events.js";
 import {
   captureGitRepoState,
@@ -691,15 +691,49 @@ async function persistVerificationArtifactsSafely(
   }
 }
 
+export type FinalizeDryRunResult = {
+  syncPreview: SyncDryRunResult | null;
+  rollbackPreview: {
+    manifestPath: string;
+    entries: Array<{ path: string; existedBefore: boolean; backupPath: string | null }>;
+  } | null;
+};
+
 async function finalizeAgentRunPersistence(input: {
   runId: string;
   task: TaskWithProject;
   execution: Awaited<ReturnType<typeof executeRole>>;
-}) {
+  dryRun?: boolean;
+}): Promise<FinalizeDryRunResult | void> {
   const beforeState = input.execution.gitPreflight;
   let rollbackManifestPath: string | null = null;
+  const dryRunResult: FinalizeDryRunResult = {
+    syncPreview: null,
+    rollbackPreview: null,
+  };
 
   if (input.execution.agentConfig.canWriteFiles && input.execution.fileChanges.all.length > 0) {
+    if (input.dryRun) {
+      dryRunResult.rollbackPreview = {
+        manifestPath: `.forgeflow/runs/${input.runId}/rollback-manifest.json`,
+        entries: input.execution.fileChanges.all.map((p) => ({
+          path: p,
+          existedBefore: true,
+          backupPath: `.forgeflow/runs/${input.runId}/rollback/${p}`,
+        })),
+      };
+
+      const syncResult = await syncWorkspaceChangesToProject({
+        projectRootPath: input.task.project.rootPath,
+        workspacePath: input.execution.workspacePath,
+        changes: input.execution.fileChanges,
+        dryRun: true,
+      });
+      dryRunResult.syncPreview = syncResult ?? null;
+
+      return dryRunResult;
+    }
+
     const rollback = await prepareRollbackArtifacts({
       runId: input.runId,
       projectRootPath: input.task.project.rootPath,
@@ -941,12 +975,13 @@ async function runPlanningStage(task: TaskWithProject, state: StageMachineState)
       task.projectId,
       "Planner",
     );
-    await finalizeAgentRunPersistence({
-      runId: plannerRun.id,
-      task,
-      execution: plannerOutcome.execution,
-    });
-    plannerRunId = plannerRun.id;
+await finalizeAgentRunPersistence({
+        runId: plannerRun.id,
+        task,
+        execution: plannerOutcome.execution,
+        dryRun: env.DRY_RUN,
+      });
+      plannerRunId = plannerRun.id;
   } else if (plannerOutcome.fallbackMessage) {
     publishProjectEvent({
       type: "info",
@@ -1071,13 +1106,14 @@ async function runCodingStage(task: TaskWithProject, state: StageMachineState): 
     task.projectId,
     "Coder",
   );
-  await finalizeAgentRunPersistence({
-    runId: coderRun.id,
-    task,
-    execution: coderExecution,
-  });
+await finalizeAgentRunPersistence({
+      runId: coderRun.id,
+      task,
+      execution: coderExecution,
+      dryRun: env.DRY_RUN,
+    });
 
-  const verificationCommand = task.project.testCommand ?? task.project.lintCommand ?? task.project.buildCommand;
+    const verificationCommand = task.project.testCommand ?? task.project.lintCommand ?? task.project.buildCommand;
 
   if (!verificationCommand) {
     await transitionTask(task, ORCHESTRATOR_STAGES.coding.activeStatus, "blocked", "No verification command configured");
@@ -1179,12 +1215,13 @@ async function runReviewingStage(task: TaskWithProject, state: StageMachineState
       task.projectId,
       "Reviewer",
     );
-    await finalizeAgentRunPersistence({
-      runId: reviewerRun.id,
-      task,
-      execution: reviewerOutcome.execution,
-    });
-    reviewerRunId = reviewerRun.id;
+await finalizeAgentRunPersistence({
+        runId: reviewerRun.id,
+        task,
+        execution: reviewerOutcome.execution,
+        dryRun: env.DRY_RUN,
+      });
+      reviewerRunId = reviewerRun.id;
   } else if (reviewerOutcome.fallbackMessage) {
     publishProjectEvent({
       type: "info",
@@ -1527,12 +1564,13 @@ async function runDebuggingStage(task: TaskWithProject, state: StageMachineState
       task.projectId,
       "Debugger",
     );
-    await finalizeAgentRunPersistence({
-      runId: debuggerRun.id,
-      task,
-      execution: debuggerOutcome.execution,
-    });
-    debuggerRunId = debuggerRun.id;
+await finalizeAgentRunPersistence({
+        runId: debuggerRun.id,
+        task,
+        execution: debuggerOutcome.execution,
+        dryRun: env.DRY_RUN,
+      });
+      debuggerRunId = debuggerRun.id;
   } else if (debuggerOutcome.fallbackMessage) {
     publishProjectEvent({
       type: "info",
