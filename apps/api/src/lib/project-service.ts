@@ -1297,3 +1297,281 @@ export async function rejectTask(taskId: string, reason?: string) {
 
   return getProjectDetail(task.projectId);
 }
+
+export interface AutopilotConfigInput {
+  stopOnHumanGate?: boolean;
+  stopOnFirstFailure?: boolean;
+  stopOnConsecutiveFailures?: number;
+  stopOnBudgetTokens?: number | null;
+  stopOnBudgetCostCents?: number | null;
+  stopOnMaxTasks?: number | null;
+  stopOnMaxTimeMinutes?: number | null;
+  approvalGateEvery?: number | null;
+  approvalGateOnHighRisk?: boolean;
+  autoApproveSafeTasks?: boolean;
+  autoApproveAfterVerifications?: number;
+  pauseOnSensitiveFiles?: boolean;
+  requireReviewOnFiles?: string[] | null;
+}
+
+export interface AutopilotConfigRecord {
+  id: string;
+  projectId: string;
+  stopOnHumanGate: boolean;
+  stopOnFirstFailure: boolean;
+  stopOnConsecutiveFailures: number;
+  stopOnBudgetTokens: number | null;
+  stopOnBudgetCostCents: number | null;
+  stopOnMaxTasks: number | null;
+  stopOnMaxTimeMinutes: number | null;
+  approvalGateEvery: number | null;
+  approvalGateOnHighRisk: boolean;
+  autoApproveSafeTasks: boolean;
+  autoApproveAfterVerifications: number;
+  pauseOnSensitiveFiles: boolean;
+  requireReviewOnFiles: string[];
+}
+
+export const DEFAULT_AUTOPILOT_CONFIG: Omit<AutopilotConfigRecord, "id" | "projectId"> = {
+  stopOnHumanGate: true,
+  stopOnFirstFailure: true,
+  stopOnConsecutiveFailures: 3,
+  stopOnBudgetTokens: null,
+  stopOnBudgetCostCents: null,
+  stopOnMaxTasks: null,
+  stopOnMaxTimeMinutes: null,
+  approvalGateEvery: null,
+  approvalGateOnHighRisk: true,
+  autoApproveSafeTasks: true,
+  autoApproveAfterVerifications: 2,
+  pauseOnSensitiveFiles: true,
+  requireReviewOnFiles: [],
+};
+
+function serializeAutopilotConfig(row: {
+  id: string;
+  projectId: string;
+  stopOnHumanGate: boolean;
+  stopOnFirstFailure: boolean;
+  stopOnConsecutiveFailures: number;
+  stopOnBudgetTokens: number | null;
+  stopOnBudgetCostCents: number | null;
+  stopOnMaxTasks: number | null;
+  stopOnMaxTimeMinutes: number | null;
+  approvalGateEvery: number | null;
+  approvalGateOnHighRisk: boolean;
+  autoApproveSafeTasks: boolean;
+  autoApproveAfterVerifications: number;
+  pauseOnSensitiveFiles: boolean;
+  requireReviewOnFiles: string | null;
+}): AutopilotConfigRecord {
+  return {
+    id: row.id,
+    projectId: row.projectId,
+    stopOnHumanGate: row.stopOnHumanGate,
+    stopOnFirstFailure: row.stopOnFirstFailure,
+    stopOnConsecutiveFailures: row.stopOnConsecutiveFailures,
+    stopOnBudgetTokens: row.stopOnBudgetTokens,
+    stopOnBudgetCostCents: row.stopOnBudgetCostCents,
+    stopOnMaxTasks: row.stopOnMaxTasks,
+    stopOnMaxTimeMinutes: row.stopOnMaxTimeMinutes,
+    approvalGateEvery: row.approvalGateEvery,
+    approvalGateOnHighRisk: row.approvalGateOnHighRisk,
+    autoApproveSafeTasks: row.autoApproveSafeTasks,
+    autoApproveAfterVerifications: row.autoApproveAfterVerifications,
+    pauseOnSensitiveFiles: row.pauseOnSensitiveFiles,
+    requireReviewOnFiles: parseJsonField(row.requireReviewOnFiles, []),
+  };
+}
+
+export async function getAutopilotConfig(projectId: string): Promise<AutopilotConfigRecord> {
+  let config = await prisma.autopilotConfig.findUnique({
+    where: { projectId },
+  });
+
+  if (!config) {
+    config = await prisma.autopilotConfig.create({
+      data: {
+        projectId,
+        ...DEFAULT_AUTOPILOT_CONFIG,
+        requireReviewOnFiles: stringifyJsonField([]),
+      },
+    });
+  }
+
+  return serializeAutopilotConfig(config);
+}
+
+const autopilotConfigUpdateSchema = z.object({
+  stopOnHumanGate: z.boolean().optional(),
+  stopOnFirstFailure: z.boolean().optional(),
+  stopOnConsecutiveFailures: z.number().int().min(1).optional(),
+  stopOnBudgetTokens: z.number().int().min(1).nullable().optional(),
+  stopOnBudgetCostCents: z.number().int().min(1).nullable().optional(),
+  stopOnMaxTasks: z.number().int().min(1).nullable().optional(),
+  stopOnMaxTimeMinutes: z.number().int().min(1).nullable().optional(),
+  approvalGateEvery: z.number().int().min(1).nullable().optional(),
+  approvalGateOnHighRisk: z.boolean().optional(),
+  autoApproveSafeTasks: z.boolean().optional(),
+  autoApproveAfterVerifications: z.number().int().min(1).optional(),
+  pauseOnSensitiveFiles: z.boolean().optional(),
+  requireReviewOnFiles: z.array(z.string()).nullable().optional(),
+});
+
+export async function updateAutopilotConfig(
+  projectId: string,
+  rawInput: unknown,
+): Promise<AutopilotConfigRecord> {
+  const input = autopilotConfigUpdateSchema.parse(rawInput);
+  const existing = await prisma.autopilotConfig.findUnique({
+    where: { projectId },
+  });
+
+  const data = {
+    stopOnHumanGate: input.stopOnHumanGate ?? existing?.stopOnHumanGate ?? DEFAULT_AUTOPILOT_CONFIG.stopOnHumanGate,
+    stopOnFirstFailure: input.stopOnFirstFailure ?? existing?.stopOnFirstFailure ?? DEFAULT_AUTOPILOT_CONFIG.stopOnFirstFailure,
+    stopOnConsecutiveFailures: input.stopOnConsecutiveFailures ?? existing?.stopOnConsecutiveFailures ?? DEFAULT_AUTOPILOT_CONFIG.stopOnConsecutiveFailures,
+    stopOnBudgetTokens: input.stopOnBudgetTokens ?? existing?.stopOnBudgetTokens ?? null,
+    stopOnBudgetCostCents: input.stopOnBudgetCostCents ?? existing?.stopOnBudgetCostCents ?? null,
+    stopOnMaxTasks: input.stopOnMaxTasks ?? existing?.stopOnMaxTasks ?? null,
+    stopOnMaxTimeMinutes: input.stopOnMaxTimeMinutes ?? existing?.stopOnMaxTimeMinutes ?? null,
+    approvalGateEvery: input.approvalGateEvery ?? existing?.approvalGateEvery ?? null,
+    approvalGateOnHighRisk: input.approvalGateOnHighRisk ?? existing?.approvalGateOnHighRisk ?? DEFAULT_AUTOPILOT_CONFIG.approvalGateOnHighRisk,
+    autoApproveSafeTasks: input.autoApproveSafeTasks ?? existing?.autoApproveSafeTasks ?? DEFAULT_AUTOPILOT_CONFIG.autoApproveSafeTasks,
+    autoApproveAfterVerifications: input.autoApproveAfterVerifications ?? existing?.autoApproveAfterVerifications ?? DEFAULT_AUTOPILOT_CONFIG.autoApproveAfterVerifications,
+    pauseOnSensitiveFiles: input.pauseOnSensitiveFiles ?? existing?.pauseOnSensitiveFiles ?? DEFAULT_AUTOPILOT_CONFIG.pauseOnSensitiveFiles,
+    requireReviewOnFiles: stringifyJsonField(input.requireReviewOnFiles ?? parseJsonField(existing?.requireReviewOnFiles, [])),
+  };
+
+  const config = existing
+    ? await prisma.autopilotConfig.update({
+        where: { projectId },
+        data,
+      })
+    : await prisma.autopilotConfig.create({
+        data: {
+          projectId,
+          ...data,
+        },
+      });
+
+  publishProjectEvent({
+    type: "info",
+    projectId,
+    timestamp: new Date().toISOString(),
+    message: `Autopilot configuration updated.`,
+  });
+
+  return serializeAutopilotConfig(config);
+}
+
+export interface AutopilotSessionState {
+  tasksCompleted: number;
+  tasksFailed: number;
+  consecutiveFailures: number;
+  tokensUsed: number;
+  costCents: number;
+  startedAt: Date;
+  approvalsGranted: number;
+  pendingApproval: boolean;
+}
+
+export interface AutopilotStopCondition {
+  reason: string;
+  shouldStop: boolean;
+  requiresApproval: boolean;
+}
+
+export function checkAutopilotStopConditions(
+  config: AutopilotConfigRecord,
+  session: AutopilotSessionState,
+): AutopilotStopCondition | null {
+  if (config.stopOnMaxTasks !== null && session.tasksCompleted >= config.stopOnMaxTasks) {
+    return {
+      reason: `Maximum tasks reached (${config.stopOnMaxTasks})`,
+      shouldStop: true,
+      requiresApproval: false,
+    };
+  }
+
+  if (config.stopOnMaxTimeMinutes !== null) {
+    const elapsedMinutes = (Date.now() - session.startedAt.getTime()) / 60000;
+    if (elapsedMinutes >= config.stopOnMaxTimeMinutes) {
+      return {
+        reason: `Maximum time reached (${config.stopOnMaxTimeMinutes} minutes)`,
+        shouldStop: true,
+        requiresApproval: false,
+      };
+    }
+  }
+
+  if (config.stopOnBudgetTokens !== null && session.tokensUsed >= config.stopOnBudgetTokens) {
+    return {
+      reason: `Token budget exhausted (${config.stopOnBudgetTokens} tokens)`,
+      shouldStop: true,
+      requiresApproval: false,
+    };
+  }
+
+  if (config.stopOnBudgetCostCents !== null && session.costCents >= config.stopOnBudgetCostCents) {
+    return {
+      reason: `Cost budget exhausted ($${(config.stopOnBudgetCostCents / 100).toFixed(2)})`,
+      shouldStop: true,
+      requiresApproval: false,
+    };
+  }
+
+  if (config.stopOnFirstFailure && session.tasksFailed > 0) {
+    return {
+      reason: "First failure encountered (stopOnFirstFailure)",
+      shouldStop: true,
+      requiresApproval: false,
+    };
+  }
+
+  if (session.consecutiveFailures >= config.stopOnConsecutiveFailures) {
+    return {
+      reason: `Consecutive failures threshold reached (${config.stopOnConsecutiveFailures})`,
+      shouldStop: true,
+      requiresApproval: false,
+    };
+  }
+
+  if (config.approvalGateEvery !== null && session.approvalsGranted > 0 && session.approvalsGranted % config.approvalGateEvery === 0) {
+    return {
+      reason: `Approval gate reached (every ${config.approvalGateEvery} tasks)`,
+      shouldStop: false,
+      requiresApproval: true,
+    };
+  }
+
+  return null;
+}
+
+export function shouldAutoApproveTask(
+  config: AutopilotConfigRecord,
+  isSafeTask: boolean,
+  verificationCount: number,
+  touchesHighRisk: boolean,
+): { canApprove: boolean; reason: string } {
+  if (config.approvalGateOnHighRisk && touchesHighRisk) {
+    return { canApprove: false, reason: "Task touches high-risk files, requires approval" };
+  }
+
+  if (config.stopOnHumanGate) {
+    return { canApprove: false, reason: "Human gate enabled, requires approval" };
+  }
+
+  if (config.autoApproveSafeTasks && isSafeTask) {
+    if (verificationCount >= config.autoApproveAfterVerifications) {
+      return { canApprove: true, reason: "Safe task with sufficient verifications" };
+    }
+    return { canApprove: false, reason: `Safe task needs ${config.autoApproveAfterVerifications - verificationCount} more verification(s)` };
+  }
+
+  if (verificationCount >= config.autoApproveAfterVerifications) {
+    return { canApprove: true, reason: "Sufficient verifications completed" };
+  }
+
+  return { canApprove: false, reason: `Needs ${config.autoApproveAfterVerifications - verificationCount} more verification(s)` };
+}

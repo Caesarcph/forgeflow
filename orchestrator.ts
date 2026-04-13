@@ -38,7 +38,7 @@ import {
   writeGitStateArtifacts,
 } from "./git-run-tracking.js";
 import { buildProjectMemorySnapshot } from "./project-memory.js";
-import { approveTask, checkAutopilotStopConditions, getAutopilotConfig, type AutopilotSessionState } from "./project-service.js";
+import { approveTask, checkAutopilotStopConditions, getAutopilotConfig, type AutopilotSessionState, createAutopilotSession, getActiveAutopilotSession, updateAutopilotSession, endAutopilotSession, pauseAutopilotSession, resumeAutopilotSession, sessionStateFromRecord, syncSessionTokenCost, checkTouchesHighRiskFiles, checkTouchesSensitiveFiles, } from "./project-service.js";
 import { persistAgentRunArtifacts, persistGitRunArtifacts, persistVerificationRunArtifacts } from "./run-artifacts.js";
 
 type TaskWithProject = Awaited<
@@ -1751,28 +1751,38 @@ function backgroundExecutionFailedMessage(scope: string, error: unknown) {
 
 async function runProjectAutopilotLoop(projectId: string) {
   const config = await getAutopilotConfig(projectId);
-  const session: AutopilotSessionState = {
-    tasksCompleted: 0,
-    tasksFailed: 0,
-    consecutiveFailures: 0,
-    tokensUsed: 0,
-    costCents: 0,
-    startedAt: new Date(),
-    approvalsGranted: 0,
-    pendingApproval: false,
-  };
-
-  publishProjectEvent({
-    type: "info",
-    projectId,
-    timestamp: new Date().toISOString(),
-    message: "Autopilot started. ForgeFlow will keep pulling runnable tasks until it hits a gate, failure, or stop request.",
-  });
+  
+  let sessionRecord = await getActiveAutopilotSession(projectId);
+  
+  if (!sessionRecord) {
+    sessionRecord = await createAutopilotSession(projectId, config.id);
+    publishProjectEvent({
+      type: "info",
+      projectId,
+      timestamp: new Date().toISOString(),
+      message: "Autopilot started. ForgeFlow will keep pulling runnable tasks until it hits a gate, failure, or stop request.",
+    });
+  } else if (sessionRecord.status === "paused") {
+    await resumeAutopilotSession(sessionRecord.id);
+    publishProjectEvent({
+      type: "info",
+      projectId,
+      timestamp: new Date().toISOString(),
+      message: "Autopilot resumed from paused state.",
+    });
+  }
+  
+  let session = sessionStateFromRecord(sessionRecord);
 
   while (await isProjectAutoRunEnabled(projectId)) {
+    const tokenCost = await syncSessionTokenCost(sessionRecord.id, sessionRecord);
+    session.tokensUsed = tokenCost.tokensUsed;
+    session.costCents = tokenCost.costCents;
+    
     const stopCondition = checkAutopilotStopConditions(config, session);
     if (stopCondition) {
       if (stopCondition.shouldStop) {
+        await endAutopilotSession(sessionRecord.id, stopCondition.reason);
         publishProjectEvent({
           type: "info",
           projectId,
@@ -1782,6 +1792,7 @@ async function runProjectAutopilotLoop(projectId: string) {
         return;
       }
       if (stopCondition.requiresApproval) {
+        await pauseAutopilotSession(sessionRecord.id, stopCondition.reason);
         publishProjectEvent({
           type: "info",
           projectId,
@@ -1796,6 +1807,7 @@ async function runProjectAutopilotLoop(projectId: string) {
     const run = await runNextTask(projectId);
 
     if (run.result === "idle") {
+      await endAutopilotSession(sessionRecord.id, "No runnable task remains");
       publishProjectEvent({
         type: "info",
         projectId,
@@ -1806,6 +1818,7 @@ async function runProjectAutopilotLoop(projectId: string) {
     }
 
     if (!("selectedTaskId" in run) || !run.selectedTaskId || !run.selectedTaskCode) {
+      await endAutopilotSession(sessionRecord.id, "Could not resolve next runnable task");
       publishProjectEvent({
         type: "info",
         projectId,
@@ -1818,6 +1831,10 @@ async function runProjectAutopilotLoop(projectId: string) {
     if (run.result === "failed" || run.result === "blocked") {
       session.tasksFailed += 1;
       session.consecutiveFailures += 1;
+      sessionRecord = await updateAutopilotSession(sessionRecord.id, {
+        tasksFailed: session.tasksFailed,
+        consecutiveFailures: session.consecutiveFailures,
+      });
       await resetModelsToDefault(projectId);
       publishProjectEvent({
         type: "info",
@@ -1836,15 +1853,25 @@ async function runProjectAutopilotLoop(projectId: string) {
         select: {
           autoApprovable: true,
           taskCode: true,
+          relevantFilesJson: true,
         },
       });
 
-      if (task?.autoApprovable && !config.stopOnHumanGate) {
+      const relevantFiles = parseJsonField<string[]>(task?.relevantFilesJson, []);
+      const touchesHighRisk = checkTouchesHighRiskFiles(relevantFiles);
+      const sensitiveFiles = checkTouchesSensitiveFiles(relevantFiles, config.requireReviewOnFiles);
+
+      if (task?.autoApprovable && !config.stopOnHumanGate && !touchesHighRisk && sensitiveFiles.length === 0) {
         await approveTask(run.selectedTaskId, "Auto-approved by ForgeFlow autopilot after successful verification");
         await resetModelsToDefault(projectId);
         session.tasksCompleted += 1;
         session.consecutiveFailures = 0;
         session.approvalsGranted += 1;
+        sessionRecord = await updateAutopilotSession(sessionRecord.id, {
+          tasksCompleted: session.tasksCompleted,
+          consecutiveFailures: session.consecutiveFailures,
+          approvalsGranted: session.approvalsGranted,
+        });
 
         publishProjectEvent({
           type: "info",
@@ -1856,11 +1883,19 @@ async function runProjectAutopilotLoop(projectId: string) {
         continue;
       }
 
+      let stopReason = "waiting for human approval";
+      if (touchesHighRisk) {
+        stopReason = "waiting for approval (high-risk files touched)";
+      } else if (sensitiveFiles.length > 0) {
+        stopReason = `waiting for approval (sensitive files: ${sensitiveFiles.slice(0, 3).join(", ")}${sensitiveFiles.length > 3 ? "..." : ""})`;
+      }
+      
+      await pauseAutopilotSession(sessionRecord.id, stopReason);
       publishProjectEvent({
         type: "info",
         projectId,
         timestamp: new Date().toISOString(),
-        message: `Autopilot stopped on ${run.selectedTaskCode}: waiting for human approval.`,
+        message: `Autopilot stopped on ${run.selectedTaskCode}: ${stopReason}.`,
       });
       return;
     }
@@ -1869,9 +1904,14 @@ async function runProjectAutopilotLoop(projectId: string) {
       await resetModelsToDefault(projectId);
       session.tasksCompleted += 1;
       session.consecutiveFailures = 0;
+      sessionRecord = await updateAutopilotSession(sessionRecord.id, {
+        tasksCompleted: session.tasksCompleted,
+        consecutiveFailures: session.consecutiveFailures,
+      });
       continue;
     }
 
+    await endAutopilotSession(sessionRecord.id, `Reached terminal state ${run.result}`);
     publishProjectEvent({
       type: "info",
       projectId,
@@ -1881,6 +1921,7 @@ async function runProjectAutopilotLoop(projectId: string) {
     return;
   }
 
+  await endAutopilotSession(sessionRecord.id, "Stop requested");
   publishProjectEvent({
     type: "info",
     projectId,

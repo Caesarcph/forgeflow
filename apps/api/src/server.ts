@@ -15,6 +15,7 @@ import { brainstormProjectDraft, checkIntakeModelHealth, detectExistingProject }
 import {
   approveTask,
   createProject,
+  getAutopilotConfig,
   getProjectDetail,
   getProjectRuns,
   getRunDetail,
@@ -24,6 +25,7 @@ import {
   rebuildProjectMemory,
   rejectTask,
   rollbackRun,
+  updateAutopilotConfig,
   updateProjectMemory,
   updateProjectConfig,
   updateAgentConfig,
@@ -888,13 +890,42 @@ app.post("/api/tasks/:taskId/reject", async (request, reply) => {
     .parse(request.body ?? {});
 
   try {
-    return {
-      detail: await rejectTask(params.taskId, body.reason),
-    };
+    return { detail: await rejectTask(params.taskId, body.reason) };
   } catch (error) {
     return sendApiError(reply, {
       statusCode: 400,
       error: error instanceof Error ? error.message : "Failed to reject task",
+    });
+  }
+});
+
+app.get("/api/projects/:id/autopilot-config", async (request, reply) => {
+  const params = z.object({
+    id: z.string(),
+  }).parse(request.params);
+
+  try {
+    return { config: await getAutopilotConfig(params.id) };
+  } catch (error) {
+    return sendApiError(reply, {
+      statusCode: 404,
+      error: "Project not found",
+      code: "PROJECT_NOT_FOUND",
+    });
+  }
+});
+
+app.patch("/api/projects/:id/autopilot-config", async (request, reply) => {
+  const params = z.object({
+    id: z.string(),
+  }).parse(request.params);
+
+  try {
+    return { config: await updateAutopilotConfig(params.id, request.body) };
+  } catch (error) {
+    return sendApiError(reply, {
+      statusCode: 400,
+      error: error instanceof Error ? error.message : "Failed to update autopilot config",
     });
   }
 });

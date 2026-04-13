@@ -5,6 +5,7 @@ import { cookies } from "next/headers";
 import { getProjectDetail } from "../../../lib/api";
 import { LANGUAGE_COOKIE_NAME, resolveLanguage, type Language } from "../../../lib/i18n";
 import { AgentConfigPanel } from "./agent-config-panel";
+import { AutopilotConfigPanel } from "./autopilot-config-panel";
 import { LiveActivity } from "./live-activity";
 import { ProjectMemoryPanel } from "./project-memory-panel";
 import { ProjectActions } from "./project-actions";
@@ -66,45 +67,47 @@ export default async function ProjectDetailPage({
           lintCommand: "Lint 命令",
           startCommand: "启动命令",
           allowedPaths: "允许修改路径",
-          notConfigured: "未配置",
-          projectMemory: "项目记忆",
-          agentConfig: "Agent 配置",
-          recentRuns: "最近 Runs",
+  notConfigured: "未配置",
+  projectMemory: "项目记忆",
+  agentConfig: "Agent 配置",
+  autopilotConfig: "自动驾驶配置",
+  recentRuns: "最近 Runs",
           noHistory: "还没有执行记录。",
           liveActivity: "实时活动",
           projectRoot: "项目根目录",
         }
-      : {
-          back: "Back To Projects",
-          runs: "View All Runs",
-          detail: "Project Detail",
-          next: "next",
-          done: "done",
-          waiting: "waiting",
-          failed: "failed",
-          taskBoard: "Task Board",
-          projectConfig: "Project Config",
-          projectType: "Project Type",
-          todo: "Task Source",
-          primaryReference: "Primary Reference",
-          completedDoc: "Completed Features Doc",
-          futureDoc: "Future Roadmap Doc",
-          implementationPlan: "Implementation Plan",
-          intakeEngine: "Final Intake Engine",
-          extraDocs: "Extra Reference Docs",
-          testCommand: "Test Command",
-          buildCommand: "Build Command",
-          lintCommand: "Lint Command",
-          startCommand: "Start Command",
-          allowedPaths: "Allowed Paths",
-          notConfigured: "Not configured",
-          projectMemory: "Project Memory",
-          agentConfig: "Agent Config",
-          recentRuns: "Recent Runs",
-          noHistory: "No execution history yet.",
-          liveActivity: "Live Activity",
-          projectRoot: "Project Root",
-        };
+  : {
+  back: "Back To Projects",
+  runs: "View All Runs",
+  detail: "Project Detail",
+  next: "next",
+  done: "done",
+  waiting: "waiting",
+  failed: "failed",
+  taskBoard: "Task Board",
+  projectConfig: "Project Config",
+  projectType: "Project Type",
+  todo: "Task Source",
+  primaryReference: "Primary Reference",
+  completedDoc: "Completed Features Doc",
+  futureDoc: "Future Roadmap Doc",
+  implementationPlan: "Implementation Plan",
+  intakeEngine: "Final Intake Engine",
+  extraDocs: "Extra Reference Docs",
+  testCommand: "Test Command",
+  buildCommand: "Build Command",
+  lintCommand: "Lint Command",
+  startCommand: "Start Command",
+  allowedPaths: "Allowed Paths",
+  notConfigured: "Not configured",
+  projectMemory: "Project Memory",
+  agentConfig: "Agent Config",
+  autopilotConfig: "Autopilot Config",
+  recentRuns: "Recent Runs",
+  noHistory: "No execution history yet.",
+  liveActivity: "Live Activity",
+  projectRoot: "Project Root",
+};
 
   return (
     <main className="shell">
@@ -180,12 +183,17 @@ export default async function ProjectDetailPage({
             />
           </section>
 
-          <section className="panel">
-            <h2>{text.agentConfig}</h2>
-            <AgentConfigPanel projectId={detail.project.id} agents={detail.agents} />
-          </section>
+<section className="panel">
+  <h2>{text.agentConfig}</h2>
+  <AgentConfigPanel projectId={detail.project.id} agents={detail.agents} />
+</section>
 
-          <section className="panel">
+<section className="panel">
+  <h2>{text.autopilotConfig}</h2>
+  <AutopilotConfigPanel projectId={detail.project.id} />
+</section>
+
+<section className="panel">
             <h2>{text.recentRuns}</h2>
             {detail.runs.length === 0 ? (
               <div className="empty">{text.noHistory}</div>

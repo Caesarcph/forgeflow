@@ -15,6 +15,7 @@ import { brainstormProjectDraft, checkIntakeModelHealth, detectExistingProject }
 import {
   approveTask,
   createProject,
+  getAutopilotConfig,
   getProjectDetail,
   getProjectRuns,
   getRunDetail,
@@ -24,10 +25,14 @@ import {
   rebuildProjectMemory,
   rejectTask,
   rollbackRun,
+  updateAutopilotConfig,
   updateProjectMemory,
   updateProjectConfig,
   updateAgentConfig,
   writebackTask,
+  getActiveAutopilotSession,
+  getAutopilotSession,
+  approveAutopilotContinuation,
 } from "./lib/project-service.js";
 import {
   recoverTask,
@@ -888,13 +893,82 @@ app.post("/api/tasks/:taskId/reject", async (request, reply) => {
     .parse(request.body ?? {});
 
   try {
-    return {
-      detail: await rejectTask(params.taskId, body.reason),
-    };
+    return { detail: await rejectTask(params.taskId, body.reason) };
   } catch (error) {
     return sendApiError(reply, {
       statusCode: 400,
       error: error instanceof Error ? error.message : "Failed to reject task",
+    });
+  }
+});
+
+app.get("/api/projects/:id/autopilot-config", async (request, reply) => {
+  const params = z.object({
+    id: z.string(),
+  }).parse(request.params);
+
+  try {
+    return { config: await getAutopilotConfig(params.id) };
+  } catch (error) {
+    return sendApiError(reply, {
+      statusCode: 404,
+      error: "Project not found",
+      code: "PROJECT_NOT_FOUND",
+    });
+  }
+});
+
+app.patch("/api/projects/:id/autopilot-config", async (request, reply) => {
+  const params = z.object({
+    id: z.string(),
+  }).parse(request.params);
+
+  try {
+    return { config: await updateAutopilotConfig(params.id, request.body) };
+  } catch (error) {
+    return sendApiError(reply, {
+      statusCode: 400,
+      error: error instanceof Error ? error.message : "Failed to update autopilot config",
+    });
+  }
+});
+
+app.get("/api/projects/:id/autopilot-session", async (request, reply) => {
+  const params = z.object({
+    id: z.string(),
+  }).parse(request.params);
+
+  try {
+    const session = await getActiveAutopilotSession(params.id);
+    return { session };
+  } catch (error) {
+    return sendApiError(reply, {
+      statusCode: 404,
+      error: "Project not found",
+      code: "PROJECT_NOT_FOUND",
+    });
+  }
+});
+
+app.post("/api/autopilot-sessions/:sessionId/approve-continuation", async (request, reply) => {
+  const params = z.object({
+    sessionId: z.string(),
+  }).parse(request.params);
+
+  try {
+    const result = await approveAutopilotContinuation(params.sessionId);
+    if (!result.success) {
+      return sendApiError(reply, {
+        statusCode: 400,
+        error: result.message,
+        code: "APPROVAL_FAILED",
+      });
+    }
+    return { session: result.session };
+  } catch (error) {
+    return sendApiError(reply, {
+      statusCode: 500,
+      error: error instanceof Error ? error.message : "Failed to approve continuation",
     });
   }
 });

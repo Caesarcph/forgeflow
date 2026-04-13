@@ -15,6 +15,7 @@ import { defaultPrompts } from "@forgeflow/prompts";
 import { updateCheckboxInFile, type DryRunResult } from "@forgeflow/task-writeback";
 import { z } from "zod";
 
+import { env } from "./env.js";
 import { publishProjectEvent } from "./events.js";
 import { readRollbackManifest, restoreRollbackManifest } from "./git-run-tracking.js";
 import {
@@ -108,10 +109,10 @@ function normalizeOptionalString(value?: string): string | null {
 }
 
 const DEFAULT_AGENT_CONFIGS: Record<string, { provider: string; model: string }> = {
-  planner: { provider: "nvidia", model: "glm-5" },
-  coder: { provider: "nvidia", model: "glm-5" },
+  planner:  { provider: "nvidia", model: "glm-5" },
+  coder:    { provider: "nvidia", model: "glm-5" },
   reviewer: { provider: "nvidia", model: "glm-5" },
-  tester: { provider: "nvidia", model: "glm-5" },
+  tester:   { provider: "nvidia", model: "glm-5" },
   debugger: { provider: "nvidia", model: "glm-5" },
 };
 
@@ -765,22 +766,19 @@ export async function rebuildProjectMemory(projectId: string) {
     },
   });
 
-  const snapshot = await buildProjectMemorySnapshot(
-    {
-      introFilePath: project.introFilePath,
-      doneProgressFilePath: project.doneProgressFilePath,
-      futureFilePath: project.futureFilePath,
-      implementationPlanFilePath: project.implementationPlanFilePath,
-      designBriefFilePath: project.designBriefFilePath,
-      interactionRulesFilePath: project.interactionRulesFilePath,
-      visualReferencesFilePath: project.visualReferencesFilePath,
-      todoProgressFilePath: project.todoProgressFilePath,
-      referenceDocs: parseJsonField<string[]>(project.referenceDocsJson, []),
-    },
-    {
-      preferPersisted: false,
-    },
-  );
+  const snapshot = await buildProjectMemorySnapshot({
+    introFilePath: project.introFilePath,
+    doneProgressFilePath: project.doneProgressFilePath,
+    futureFilePath: project.futureFilePath,
+    implementationPlanFilePath: project.implementationPlanFilePath,
+    designBriefFilePath: project.designBriefFilePath,
+    interactionRulesFilePath: project.interactionRulesFilePath,
+    visualReferencesFilePath: project.visualReferencesFilePath,
+    todoProgressFilePath: project.todoProgressFilePath,
+    referenceDocs: parseJsonField<string[]>(project.referenceDocsJson, []),
+  }, {
+    preferPersisted: false,
+  });
 
   await prisma.project.update({
     where: {
@@ -924,6 +922,7 @@ export async function writebackTask(
   summary?: string,
   options?: { dryRun?: boolean },
 ): Promise<WritebackDryRunResult | WritebackResult> {
+  const effectiveDryRun = options?.dryRun ?? env.DRY_RUN;
   const task = await prisma.task.findUniqueOrThrow({
     where: {
       id: taskId,
@@ -938,10 +937,10 @@ export async function writebackTask(
     lineNumber: task.sourceLineStart,
     checked: true,
     summary,
-    dryRun: options?.dryRun,
+    dryRun: effectiveDryRun,
   });
 
-  if (options?.dryRun && writebackResult) {
+  if (effectiveDryRun && writebackResult) {
     return {
       dryRun: true,
       task: serializeTask(task),
@@ -977,6 +976,7 @@ export async function approveTask(
   summary?: string,
   options?: { dryRun?: boolean },
 ): Promise<WritebackDryRunResult | WritebackResult> {
+  const effectiveDryRun = options?.dryRun ?? env.DRY_RUN;
   const task = await prisma.task.findUniqueOrThrow({
     where: {
       id: taskId,
@@ -1003,10 +1003,10 @@ export async function approveTask(
     lineNumber: task.sourceLineStart,
     checked: true,
     summary,
-    dryRun: options?.dryRun,
+    dryRun: effectiveDryRun,
   });
 
-  if (options?.dryRun && writebackResult) {
+  if (effectiveDryRun && writebackResult) {
     return {
       dryRun: true,
       task: serializeTask(task),
@@ -1296,4 +1296,542 @@ export async function rejectTask(taskId: string, reason?: string) {
   });
 
   return getProjectDetail(task.projectId);
+}
+
+export interface AutopilotConfigInput {
+  stopOnHumanGate?: boolean;
+  stopOnFirstFailure?: boolean;
+  stopOnConsecutiveFailures?: number;
+  stopOnBudgetTokens?: number | null;
+  stopOnBudgetCostCents?: number | null;
+  stopOnMaxTasks?: number | null;
+  stopOnMaxTimeMinutes?: number | null;
+  approvalGateEvery?: number | null;
+  approvalGateOnHighRisk?: boolean;
+  autoApproveSafeTasks?: boolean;
+  autoApproveAfterVerifications?: number;
+  pauseOnSensitiveFiles?: boolean;
+  requireReviewOnFiles?: string[] | null;
+}
+
+export interface AutopilotConfigRecord {
+  id: string;
+  projectId: string;
+  stopOnHumanGate: boolean;
+  stopOnFirstFailure: boolean;
+  stopOnConsecutiveFailures: number;
+  stopOnBudgetTokens: number | null;
+  stopOnBudgetCostCents: number | null;
+  stopOnMaxTasks: number | null;
+  stopOnMaxTimeMinutes: number | null;
+  approvalGateEvery: number | null;
+  approvalGateOnHighRisk: boolean;
+  autoApproveSafeTasks: boolean;
+  autoApproveAfterVerifications: number;
+  pauseOnSensitiveFiles: boolean;
+  requireReviewOnFiles: string[];
+}
+
+export const DEFAULT_AUTOPILOT_CONFIG: Omit<AutopilotConfigRecord, "id" | "projectId"> = {
+  stopOnHumanGate: true,
+  stopOnFirstFailure: true,
+  stopOnConsecutiveFailures: 3,
+  stopOnBudgetTokens: null,
+  stopOnBudgetCostCents: null,
+  stopOnMaxTasks: null,
+  stopOnMaxTimeMinutes: null,
+  approvalGateEvery: null,
+  approvalGateOnHighRisk: true,
+  autoApproveSafeTasks: true,
+  autoApproveAfterVerifications: 2,
+  pauseOnSensitiveFiles: true,
+  requireReviewOnFiles: [],
+};
+
+function serializeAutopilotConfig(row: {
+  id: string;
+  projectId: string;
+  stopOnHumanGate: boolean;
+  stopOnFirstFailure: boolean;
+  stopOnConsecutiveFailures: number;
+  stopOnBudgetTokens: number | null;
+  stopOnBudgetCostCents: number | null;
+  stopOnMaxTasks: number | null;
+  stopOnMaxTimeMinutes: number | null;
+  approvalGateEvery: number | null;
+  approvalGateOnHighRisk: boolean;
+  autoApproveSafeTasks: boolean;
+  autoApproveAfterVerifications: number;
+  pauseOnSensitiveFiles: boolean;
+  requireReviewOnFiles: string | null;
+}): AutopilotConfigRecord {
+  return {
+    id: row.id,
+    projectId: row.projectId,
+    stopOnHumanGate: row.stopOnHumanGate,
+    stopOnFirstFailure: row.stopOnFirstFailure,
+    stopOnConsecutiveFailures: row.stopOnConsecutiveFailures,
+    stopOnBudgetTokens: row.stopOnBudgetTokens,
+    stopOnBudgetCostCents: row.stopOnBudgetCostCents,
+    stopOnMaxTasks: row.stopOnMaxTasks,
+    stopOnMaxTimeMinutes: row.stopOnMaxTimeMinutes,
+    approvalGateEvery: row.approvalGateEvery,
+    approvalGateOnHighRisk: row.approvalGateOnHighRisk,
+    autoApproveSafeTasks: row.autoApproveSafeTasks,
+    autoApproveAfterVerifications: row.autoApproveAfterVerifications,
+    pauseOnSensitiveFiles: row.pauseOnSensitiveFiles,
+    requireReviewOnFiles: parseJsonField(row.requireReviewOnFiles, []),
+  };
+}
+
+export async function getAutopilotConfig(projectId: string): Promise<AutopilotConfigRecord> {
+  let config = await prisma.autopilotConfig.findUnique({
+    where: { projectId },
+  });
+
+  if (!config) {
+    config = await prisma.autopilotConfig.create({
+      data: {
+        projectId,
+        ...DEFAULT_AUTOPILOT_CONFIG,
+        requireReviewOnFiles: stringifyJsonField([]),
+      },
+    });
+  }
+
+  return serializeAutopilotConfig(config);
+}
+
+const autopilotConfigUpdateSchema = z.object({
+  stopOnHumanGate: z.boolean().optional(),
+  stopOnFirstFailure: z.boolean().optional(),
+  stopOnConsecutiveFailures: z.number().int().min(1).optional(),
+  stopOnBudgetTokens: z.number().int().min(1).nullable().optional(),
+  stopOnBudgetCostCents: z.number().int().min(1).nullable().optional(),
+  stopOnMaxTasks: z.number().int().min(1).nullable().optional(),
+  stopOnMaxTimeMinutes: z.number().int().min(1).nullable().optional(),
+  approvalGateEvery: z.number().int().min(1).nullable().optional(),
+  approvalGateOnHighRisk: z.boolean().optional(),
+  autoApproveSafeTasks: z.boolean().optional(),
+  autoApproveAfterVerifications: z.number().int().min(1).optional(),
+  pauseOnSensitiveFiles: z.boolean().optional(),
+  requireReviewOnFiles: z.array(z.string()).nullable().optional(),
+});
+
+export async function updateAutopilotConfig(
+  projectId: string,
+  rawInput: unknown,
+): Promise<AutopilotConfigRecord> {
+  const input = autopilotConfigUpdateSchema.parse(rawInput);
+  const existing = await prisma.autopilotConfig.findUnique({
+    where: { projectId },
+  });
+
+  const data = {
+    stopOnHumanGate: input.stopOnHumanGate ?? existing?.stopOnHumanGate ?? DEFAULT_AUTOPILOT_CONFIG.stopOnHumanGate,
+    stopOnFirstFailure: input.stopOnFirstFailure ?? existing?.stopOnFirstFailure ?? DEFAULT_AUTOPILOT_CONFIG.stopOnFirstFailure,
+    stopOnConsecutiveFailures: input.stopOnConsecutiveFailures ?? existing?.stopOnConsecutiveFailures ?? DEFAULT_AUTOPILOT_CONFIG.stopOnConsecutiveFailures,
+    stopOnBudgetTokens: input.stopOnBudgetTokens ?? existing?.stopOnBudgetTokens ?? null,
+    stopOnBudgetCostCents: input.stopOnBudgetCostCents ?? existing?.stopOnBudgetCostCents ?? null,
+    stopOnMaxTasks: input.stopOnMaxTasks ?? existing?.stopOnMaxTasks ?? null,
+    stopOnMaxTimeMinutes: input.stopOnMaxTimeMinutes ?? existing?.stopOnMaxTimeMinutes ?? null,
+    approvalGateEvery: input.approvalGateEvery ?? existing?.approvalGateEvery ?? null,
+    approvalGateOnHighRisk: input.approvalGateOnHighRisk ?? existing?.approvalGateOnHighRisk ?? DEFAULT_AUTOPILOT_CONFIG.approvalGateOnHighRisk,
+    autoApproveSafeTasks: input.autoApproveSafeTasks ?? existing?.autoApproveSafeTasks ?? DEFAULT_AUTOPILOT_CONFIG.autoApproveSafeTasks,
+    autoApproveAfterVerifications: input.autoApproveAfterVerifications ?? existing?.autoApproveAfterVerifications ?? DEFAULT_AUTOPILOT_CONFIG.autoApproveAfterVerifications,
+    pauseOnSensitiveFiles: input.pauseOnSensitiveFiles ?? existing?.pauseOnSensitiveFiles ?? DEFAULT_AUTOPILOT_CONFIG.pauseOnSensitiveFiles,
+    requireReviewOnFiles: stringifyJsonField(input.requireReviewOnFiles ?? parseJsonField(existing?.requireReviewOnFiles, [])),
+  };
+
+  const config = existing
+    ? await prisma.autopilotConfig.update({
+        where: { projectId },
+        data,
+      })
+    : await prisma.autopilotConfig.create({
+        data: {
+          projectId,
+          ...data,
+        },
+      });
+
+  publishProjectEvent({
+    type: "info",
+    projectId,
+    timestamp: new Date().toISOString(),
+    message: `Autopilot configuration updated.`,
+  });
+
+  return serializeAutopilotConfig(config);
+}
+
+export interface AutopilotSessionState {
+  tasksCompleted: number;
+  tasksFailed: number;
+  consecutiveFailures: number;
+  tokensUsed: number;
+  costCents: number;
+  startedAt: Date;
+  approvalsGranted: number;
+  pendingApproval: boolean;
+}
+
+export interface AutopilotStopCondition {
+  reason: string;
+  shouldStop: boolean;
+  requiresApproval: boolean;
+}
+
+export function checkAutopilotStopConditions(
+  config: AutopilotConfigRecord,
+  session: AutopilotSessionState,
+): AutopilotStopCondition | null {
+  if (config.stopOnMaxTasks !== null && session.tasksCompleted >= config.stopOnMaxTasks) {
+    return {
+      reason: `Maximum tasks reached (${config.stopOnMaxTasks})`,
+      shouldStop: true,
+      requiresApproval: false,
+    };
+  }
+
+  if (config.stopOnMaxTimeMinutes !== null) {
+    const elapsedMinutes = (Date.now() - session.startedAt.getTime()) / 60000;
+    if (elapsedMinutes >= config.stopOnMaxTimeMinutes) {
+      return {
+        reason: `Maximum time reached (${config.stopOnMaxTimeMinutes} minutes)`,
+        shouldStop: true,
+        requiresApproval: false,
+      };
+    }
+  }
+
+  if (config.stopOnBudgetTokens !== null && session.tokensUsed >= config.stopOnBudgetTokens) {
+    return {
+      reason: `Token budget exhausted (${config.stopOnBudgetTokens} tokens)`,
+      shouldStop: true,
+      requiresApproval: false,
+    };
+  }
+
+  if (config.stopOnBudgetCostCents !== null && session.costCents >= config.stopOnBudgetCostCents) {
+    return {
+      reason: `Cost budget exhausted ($${(config.stopOnBudgetCostCents / 100).toFixed(2)})`,
+      shouldStop: true,
+      requiresApproval: false,
+    };
+  }
+
+  if (config.stopOnFirstFailure && session.tasksFailed > 0) {
+    return {
+      reason: "First failure encountered (stopOnFirstFailure)",
+      shouldStop: true,
+      requiresApproval: false,
+    };
+  }
+
+  if (session.consecutiveFailures >= config.stopOnConsecutiveFailures) {
+    return {
+      reason: `Consecutive failures threshold reached (${config.stopOnConsecutiveFailures})`,
+      shouldStop: true,
+      requiresApproval: false,
+    };
+  }
+
+  if (config.approvalGateEvery !== null && session.approvalsGranted > 0 && session.approvalsGranted % config.approvalGateEvery === 0) {
+    return {
+      reason: `Approval gate reached (every ${config.approvalGateEvery} tasks)`,
+      shouldStop: false,
+      requiresApproval: true,
+    };
+  }
+
+  return null;
+}
+
+export function shouldAutoApproveTask(
+  config: AutopilotConfigRecord,
+  isSafeTask: boolean,
+  verificationCount: number,
+  touchesHighRisk: boolean,
+): { canApprove: boolean; reason: string } {
+  if (config.approvalGateOnHighRisk && touchesHighRisk) {
+    return { canApprove: false, reason: "Task touches high-risk files, requires approval" };
+  }
+
+  if (config.stopOnHumanGate) {
+    return { canApprove: false, reason: "Human gate enabled, requires approval" };
+  }
+
+  if (config.autoApproveSafeTasks && isSafeTask) {
+    if (verificationCount >= config.autoApproveAfterVerifications) {
+      return { canApprove: true, reason: "Safe task with sufficient verifications" };
+    }
+    return { canApprove: false, reason: `Safe task needs ${config.autoApproveAfterVerifications - verificationCount} more verification(s)` };
+  }
+
+  if (verificationCount >= config.autoApproveAfterVerifications) {
+    return { canApprove: true, reason: "Sufficient verifications completed" };
+  }
+
+  return { canApprove: false, reason: `Needs ${config.autoApproveAfterVerifications - verificationCount} more verification(s)` };
+}
+
+const HIGH_RISK_PATTERNS = [
+  /(^|[\/\\])(prisma|schema|migration|database)[\/\\]/i,
+  /(^|[\/\\])(auth|login|password|session|token|jwt|cookie)[\/\\]/i,
+  /(^|[\/\\])(payment|billing|checkout|stripe|subscription)[\/\\]/i,
+  /(^|[\/\\])(env|config|secret|credential|key)[\/\\]/i,
+  /(schema\.prisma|prisma\.schema)$/i,
+  /(\.env|\.env\..*)$/i,
+  /(auth\.ts|auth\.js|authentication\.ts|authentication\.js)$/i,
+  /(middleware\.ts|middleware\.js)$/i,
+];
+
+export function checkTouchesHighRiskFiles(files: string[]): boolean {
+  return files.some((file) =>
+    HIGH_RISK_PATTERNS.some((pattern) => pattern.test(file))
+  );
+}
+
+export function checkTouchesSensitiveFiles(
+  files: string[],
+  requireReviewPatterns: string[]
+): string[] {
+  const matchedFiles: string[] = [];
+  
+  for (const file of files) {
+    for (const patternStr of requireReviewPatterns) {
+      try {
+        const pattern = new RegExp(patternStr, "i");
+        if (pattern.test(file)) {
+          matchedFiles.push(file);
+          break;
+        }
+      } catch {
+        // Invalid regex, skip
+      }
+    }
+  }
+  
+  return [...new Set(matchedFiles)];
+}
+
+export interface TokenCostAggregation {
+  tokensUsed: number;
+  costCents: number;
+}
+
+export async function aggregateTokenCostFromRuns(
+  projectId: string,
+  since: Date
+): Promise<TokenCostAggregation> {
+  const runs = await prisma.taskRun.findMany({
+    where: {
+      projectId,
+      startedAt: { gte: since },
+    },
+    select: {
+      tokenUsageJson: true,
+      costJson: true,
+    },
+  });
+
+  let tokensUsed = 0;
+  let costCents = 0;
+
+  for (const run of runs) {
+    const tokenUsage = parseJsonField<{ total?: number; prompt?: number; completion?: number } | null>(
+      run.tokenUsageJson,
+      null
+    );
+    if (tokenUsage) {
+      tokensUsed += tokenUsage.total ?? 0;
+    }
+
+    const cost = parseJsonField<{ totalCents?: number; total?: number } | null>(
+      run.costJson,
+      null
+    );
+    if (cost) {
+      costCents += cost.totalCents ?? cost.total ?? 0;
+    }
+  }
+
+  return { tokensUsed, costCents };
+}
+
+export interface AutopilotSessionRecord {
+  id: string;
+  projectId: string;
+  configId: string;
+  status: string;
+  tasksCompleted: number;
+  tasksFailed: number;
+  consecutiveFailures: number;
+  tokensUsed: number;
+  costCents: number;
+  approvalsGranted: number;
+  pendingApproval: boolean;
+  stopReason: string | null;
+  startedAt: Date;
+  endedAt: Date | null;
+}
+
+export async function createAutopilotSession(
+  projectId: string,
+  configId: string
+): Promise<AutopilotSessionRecord> {
+  const session = await prisma.autopilotSession.create({
+    data: {
+      projectId,
+      configId,
+      status: "running",
+      tasksCompleted: 0,
+      tasksFailed: 0,
+      consecutiveFailures: 0,
+      tokensUsed: 0,
+      costCents: 0,
+      approvalsGranted: 0,
+      pendingApproval: false,
+    },
+  });
+
+  return session;
+}
+
+export async function getActiveAutopilotSession(
+  projectId: string
+): Promise<AutopilotSessionRecord | null> {
+  const session = await prisma.autopilotSession.findFirst({
+    where: {
+      projectId,
+      status: "running",
+    },
+    orderBy: {
+      startedAt: "desc",
+    },
+  });
+
+  return session;
+}
+
+export async function updateAutopilotSession(
+  sessionId: string,
+  updates: Partial<
+    Pick<
+      AutopilotSessionRecord,
+      | "tasksCompleted"
+      | "tasksFailed"
+      | "consecutiveFailures"
+      | "tokensUsed"
+      | "costCents"
+      | "approvalsGranted"
+      | "pendingApproval"
+      | "status"
+      | "stopReason"
+      | "endedAt"
+    >
+  >
+): Promise<AutopilotSessionRecord> {
+  const session = await prisma.autopilotSession.update({
+    where: { id: sessionId },
+    data: updates,
+  });
+
+  return session;
+}
+
+export async function endAutopilotSession(
+  sessionId: string,
+  reason: string
+): Promise<AutopilotSessionRecord> {
+  return updateAutopilotSession(sessionId, {
+    status: "completed",
+    stopReason: reason,
+    endedAt: new Date(),
+    pendingApproval: false,
+  });
+}
+
+export async function pauseAutopilotSession(
+  sessionId: string,
+  reason: string
+): Promise<AutopilotSessionRecord> {
+  return updateAutopilotSession(sessionId, {
+    status: "paused",
+    stopReason: reason,
+    pendingApproval: true,
+  });
+}
+
+export async function resumeAutopilotSession(
+  sessionId: string
+): Promise<AutopilotSessionRecord> {
+  return updateAutopilotSession(sessionId, {
+    status: "running",
+    pendingApproval: false,
+  });
+}
+
+export function sessionStateFromRecord(record: AutopilotSessionRecord): AutopilotSessionState {
+  return {
+    tasksCompleted: record.tasksCompleted,
+    tasksFailed: record.tasksFailed,
+    consecutiveFailures: record.consecutiveFailures,
+    tokensUsed: record.tokensUsed,
+    costCents: record.costCents,
+    startedAt: record.startedAt,
+    approvalsGranted: record.approvalsGranted,
+    pendingApproval: record.pendingApproval,
+  };
+}
+
+export async function syncSessionTokenCost(
+  sessionId: string,
+  session: AutopilotSessionRecord
+): Promise<TokenCostAggregation> {
+  const aggregation = await aggregateTokenCostFromRuns(
+    session.projectId,
+    session.startedAt
+  );
+
+  await updateAutopilotSession(sessionId, {
+    tokensUsed: aggregation.tokensUsed,
+    costCents: aggregation.costCents,
+  });
+
+  return aggregation;
+}
+
+export async function getAutopilotSession(sessionId: string): Promise<AutopilotSessionRecord | null> {
+  return prisma.autopilotSession.findUnique({
+    where: { id: sessionId },
+  });
+}
+
+export async function approveAutopilotContinuation(
+  sessionId: string
+): Promise<{ success: boolean; message: string; session: AutopilotSessionRecord | null }> {
+  const session = await prisma.autopilotSession.findUnique({
+    where: { id: sessionId },
+  });
+
+  if (!session) {
+    return { success: false, message: "Session not found", session: null };
+  }
+
+  if (session.status !== "paused") {
+    return { success: false, message: "Session is not paused", session };
+  }
+
+  const updated = await prisma.autopilotSession.update({
+    where: { id: sessionId },
+    data: {
+      status: "running",
+      pendingApproval: false,
+      stopReason: null,
+    },
+  });
+
+  return { success: true, message: "Continuation approved", session: updated };
 }

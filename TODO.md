@@ -61,7 +61,7 @@ Track the highest-priority engineering work here. Mark items with `- [x]` when d
 - [ ] Add a dry-run mode that simulates writeback and file sync without mutating the repo
 - [ ] Add explicit human approval gates for risky file writes and shell commands
 - [ ] Add a “safe autopilot” mode that only runs low-risk documentation and UI text tasks continuously
-- [ ] Add a “full autopilot” mode with configurable stop conditions, budgets, and approval gates
+- [x] Add a “full autopilot” mode with configurable stop conditions, budgets, and approval gates
 - [ ] Add project-level execution budgets for time, retries, commands, and model usage
 
 ## P3 Context And Memory
