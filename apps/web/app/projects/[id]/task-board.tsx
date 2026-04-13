@@ -8,6 +8,55 @@ import { CLIENT_API_BASE_URL } from "../../../lib/client-api";
 import { parseJsonResponse, readApiError } from "../../../lib/http";
 import { useLanguage } from "../../language-provider";
 
+const SAFE_TASK_PATTERNS = [
+  /document|文档|readme|changelog|md$/i,
+  /ui\s*(text|copy|label|string|message)|文案|文本|标签|提示/i,
+  /i18n|internationalization|localization|翻译|国际化|本地化/i,
+  /comment|注释|注释$/i,
+  /typo|错别字|拼写|错字/i,
+  /help\s*(text|tip|message)|帮助|提示文本/i,
+  /placeholder|占位|placeholder/i,
+  /button\s*(text|label)|按钮文本/i,
+  /error\s*message|error\s*text|错误提示|错误信息/i,
+  /success\s*message|成功提示/i,
+  /tooltip|工具提示|悬停提示/i,
+  /accessibility|a11y|无障碍/i,
+  /aria-|aria:/i,
+  /license|licensing|许可|许可证/i,
+  /contributing|贡献指南/i,
+  /update\s*(changelog|release\s*note)|更新日志|发布说明/i,
+];
+
+const HIGH_RISK_PATTERNS = [
+  /api\s*(key|token|secret)|密码|密钥|token|secret/i,
+  /database|schema|migration|数据库|表结构/i,
+  /auth|authentication|authorization|认证|鉴权/i,
+  /security|安全漏洞|漏洞修复/i,
+  /payment|支付|billing|计费/i,
+  /delete|删除|drop|truncate/i,
+  /deploy|deployment|部署/i,
+  /config|configuration|配置文件/i,
+  /env|environment|环境变量/i,
+];
+
+function isSafeTask(rawText: string): boolean {
+  const text = rawText.toLowerCase();
+
+  for (const pattern of HIGH_RISK_PATTERNS) {
+    if (pattern.test(text)) {
+      return false;
+    }
+  }
+
+  for (const pattern of SAFE_TASK_PATTERNS) {
+    if (pattern.test(text)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 const API_BASE_URL = CLIENT_API_BASE_URL;
 type RecoveryStage = "planning" | "coding" | "testing";
 type TaskStatusFilter = "all" | "active" | "waiting_human" | "failed" | "done" | "queued";
@@ -87,63 +136,67 @@ function getText(language: "en" | "zh") {
       restartCoder: "从 Coder 重来",
       retryTester: "仅重试 Tester",
       forceWriteback: "强制回写",
-      noTasks: "没有任务符合当前筛选条件。",
-    };
+  noTasks: "没有任务符合当前筛选条件。",
+  safeTask: "安全任务",
+  safeTaskHint: "可由安全自动驾驶处理",
+  };
   }
 
   return {
-    idle: "Run tasks, approve human gates, or force Markdown writeback from here.",
-    running: "Queueing the task in the background...",
-    runQueued:
-      "Task queued in the background. If the current filter is not All statuses, it may disappear from this view once its status changes. Check Live Activity.",
-    runFailed: "Failed to run task",
-    writingBack: "Writing back the Markdown checkbox...",
-    writebackDone: "Task written back and marked complete.",
-    writebackFailed: "Failed to write back task",
-    approving: "Approving task and writing progress...",
-    approved: "Task approved.",
-    approveFailed: "Failed to approve task",
-    rejecting: "Returning task to planning...",
-    rejected: "Task returned to planning.",
-    rejectFailed: "Failed to reject task",
-    restartFrom: (stage: RecoveryStage) => `Restarting from ${stage}...`,
-    recoveredFrom: (stage: RecoveryStage) => `Recovery path executed from ${stage}.`,
-    recoverFailed: (stage: RecoveryStage) => `Failed to recover from ${stage}`,
-    statusFilter: "Status Filter",
-    allStatuses: "All statuses",
-    activeStages: "Active stages",
-    queued: "Queued",
-    waitingHuman: "Waiting human",
-    failed: "Failed",
-    done: "Done",
-    taskType: "Task Type",
-    allTaskTypes: "All task types",
-    auto: "Auto",
-    humanGate: "Human gate",
-    search: "Search",
-    searchPlaceholder: "Task code, title, dependency, file",
-    visible: "visible",
-    withDeps: "with deps",
-    depsSatisfied: "deps satisfied",
-    waitingOnDeps: "waiting on deps",
-    dependencyMap: "Dependency Map",
-    dependsOn: "depends on",
-    missing: "missing",
-    unlocks: "unlocks",
-    unsectioned: "Unsectioned",
-    dependencies: "Dependencies",
-    acceptanceCriteria: "Acceptance Criteria",
-    relevantFiles: "Relevant Files",
-    processing: "Processing...",
-    retryTask: "Retry Task",
-    runTask: "Run Task",
-    approveWriteback: "Approve And Write Back",
-    returnPlanning: "Return To Planning",
-    restartPlanner: "Restart From Planner",
-    restartCoder: "Restart From Coder",
-    retryTester: "Retry Tester Only",
-    forceWriteback: "Force Writeback",
-    noTasks: "No tasks matched the current filters.",
+  idle: "Run tasks, approve human gates, or force Markdown writeback from here.",
+  running: "Queueing the task in the background...",
+  runQueued:
+    "Task queued in the background. If the current filter is not All statuses, it may disappear from this view once its status changes. Check Live Activity.",
+  runFailed: "Failed to run task",
+  writingBack: "Writing back the Markdown checkbox...",
+  writebackDone: "Task written back and marked complete.",
+  writebackFailed: "Failed to write back task",
+  approving: "Approving task and writing progress...",
+  approved: "Task approved.",
+  approveFailed: "Failed to approve task",
+  rejecting: "Returning task to planning...",
+  rejected: "Task returned to planning.",
+  rejectFailed: "Failed to reject task",
+  restartFrom: (stage: RecoveryStage) => `Restarting from ${stage}...`,
+  recoveredFrom: (stage: RecoveryStage) => `Recovery path executed from ${stage}.`,
+  recoverFailed: (stage: RecoveryStage) => `Failed to recover from ${stage}`,
+  statusFilter: "Status Filter",
+  allStatuses: "All statuses",
+  activeStages: "Active stages",
+  queued: "Queued",
+  waitingHuman: "Waiting human",
+  failed: "Failed",
+  done: "Done",
+  taskType: "Task Type",
+  allTaskTypes: "All task types",
+  auto: "Auto",
+  humanGate: "Human gate",
+  search: "Search",
+  searchPlaceholder: "Task code, title, dependency, file",
+  visible: "visible",
+  withDeps: "with deps",
+  depsSatisfied: "deps satisfied",
+  waitingOnDeps: "waiting on deps",
+  dependencyMap: "Dependency Map",
+  dependsOn: "depends on",
+  missing: "missing",
+  unlocks: "unlocks",
+  unsectioned: "Unsectioned",
+  dependencies: "Dependencies",
+  acceptanceCriteria: "Acceptance Criteria",
+  relevantFiles: "Relevant Files",
+  processing: "Processing...",
+  retryTask: "Retry Task",
+  runTask: "Run Task",
+  approveWriteback: "Approve And Write Back",
+  returnPlanning: "Return To Planning",
+  restartPlanner: "Restart From Planner",
+  restartCoder: "Restart From Coder",
+  retryTester: "Retry Tester Only",
+  forceWriteback: "Force Writeback",
+  noTasks: "No tasks matched the current filters.",
+  safeTask: "Safe task",
+  safeTaskHint: "Can be processed by safe autopilot",
   };
 }
 
@@ -394,39 +447,45 @@ export function TaskBoard({ tasks }: { tasks: ProjectTask[] }) {
         </section>
       ) : null}
 
-      <div className="task-list">
-        {filteredTasks.map((task) => {
-          const busy = pendingTaskId === task.id;
-          const canWriteback = task.status !== "done" && task.status !== "skipped";
-          const canApprove = task.status === "waiting_human";
-          const canReject = task.status === "waiting_human";
-          const canRecover =
-            task.status === "failed" ||
-            task.status === "blocked" ||
-            task.status === "waiting_human" ||
-            task.status === "ready_for_coding" ||
-            task.status === "coding" ||
-            task.status === "reviewing" ||
-            task.status === "testing" ||
-            task.status === "debugging";
-          const runLabel = task.status === "failed" || task.status === "blocked" ? text.retryTask : text.runTask;
-          const dependentCodes = dependents.get(task.taskCode) ?? [];
+  <div className="task-list">
+    {filteredTasks.map((task) => {
+    const busy = pendingTaskId === task.id;
+    const canWriteback = task.status !== "done" && task.status !== "skipped";
+    const canApprove = task.status === "waiting_human";
+    const canReject = task.status === "waiting_human";
+    const canRecover =
+    task.status === "failed" ||
+    task.status === "blocked" ||
+    task.status === "waiting_human" ||
+    task.status === "ready_for_coding" ||
+    task.status === "coding" ||
+    task.status === "reviewing" ||
+    task.status === "testing" ||
+    task.status === "debugging";
+    const runLabel = task.status === "failed" || task.status === "blocked" ? text.retryTask : text.runTask;
+    const dependentCodes = dependents.get(task.taskCode) ?? [];
+    const taskIsSafe = isSafeTask(task.rawText ?? task.title);
 
-          return (
-            <article key={task.id} className="task-item">
-              <div>
-                <strong>{task.taskCode}</strong>
-                <div>{task.title}</div>
-                <div className="muted">
-                  {task.section ?? text.unsectioned} / line {task.sourceLineStart}
-                </div>
-              </div>
+    return (
+    <article key={task.id} className="task-item">
+    <div>
+    <strong>{task.taskCode}</strong>
+    <div>{task.title}</div>
+    <div className="muted">
+    {task.section ?? text.unsectioned} / line {task.sourceLineStart}
+    </div>
+    </div>
 
-              <div className="inline-meta">
-                <span className="tag">{task.status}</span>
-                <span className={`tag ${task.taskType === "human_gate" ? "warn" : "good"}`}>{task.taskType}</span>
-                {task.latestSummary ? <span className="tag">{task.latestSummary}</span> : null}
-              </div>
+    <div className="inline-meta">
+    <span className="tag">{task.status}</span>
+    <span className={`tag ${task.taskType === "human_gate" ? "warn" : "good"}`}>{task.taskType}</span>
+    {taskIsSafe ? (
+    <span className="tag good" title={text.safeTaskHint}>
+    {text.safeTask}
+    </span>
+    ) : null}
+    {task.latestSummary ? <span className="tag">{task.latestSummary}</span> : null}
+    </div>
 
               {task.dependencies.length > 0 ? (
                 <div className="stack compact">

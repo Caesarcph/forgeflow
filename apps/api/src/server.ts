@@ -40,6 +40,8 @@ import {
   stopProjectAutopilot,
   startTaskExecutionInBackground,
   startTaskRecoveryInBackground,
+  startProjectSafeAutopilotInBackground,
+  stopProjectSafeAutopilot,
 } from "./lib/orchestrator.js";
 import {
   closePtySession,
@@ -637,6 +639,36 @@ app.post("/api/projects/:id/autopilot/stop", async (request, reply) => {
     return sendApiError(reply, {
       statusCode: 400,
       error: error instanceof Error ? error.message : "Failed to stop autopilot",
+    });
+  }
+});
+
+app.post("/api/projects/:id/safe-autopilot/start", async (request, reply) => {
+  const params = z.object({
+    id: z.string(),
+  }).parse(request.params);
+
+  try {
+    return reply.code(202).send(await startProjectSafeAutopilotInBackground(params.id));
+  } catch (error) {
+    return sendApiError(reply, {
+      statusCode: 400,
+      error: error instanceof Error ? error.message : "Failed to start safe autopilot",
+    });
+  }
+});
+
+app.post("/api/projects/:id/safe-autopilot/stop", async (request, reply) => {
+  const params = z.object({
+    id: z.string(),
+  }).parse(request.params);
+
+  try {
+    return await stopProjectSafeAutopilot(params.id);
+  } catch (error) {
+    return sendApiError(reply, {
+      statusCode: 400,
+      error: error instanceof Error ? error.message : "Failed to stop safe autopilot",
     });
   }
 });

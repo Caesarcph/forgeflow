@@ -300,3 +300,61 @@ export function getNextRunnableTask<T extends TaskLike>(tasks: T[]): T | null {
 
   return candidates[0] ?? null;
 }
+
+export const SAFE_TASK_PATTERNS = [
+  /document|文档|readme|changelog|md$/i,
+  /ui\s*(text|copy|label|string|message)|文案|文本|标签|提示/i,
+  /i18n|internationalization|localization|翻译|国际化|本地化/i,
+  /comment|注释|注释$/i,
+  /typo|错别字|拼写|错字/i,
+  /help\s*(text|tip|message)|帮助|提示文本/i,
+  /placeholder|占位|placeholder/i,
+  /button\s*(text|label)|按钮文本/i,
+  /error\s*message|error\s*text|错误提示|错误信息/i,
+  /success\s*message|成功提示/i,
+  /tooltip|工具提示|悬停提示/i,
+  /accessibility|a11y|无障碍/i,
+  /aria-|aria:/i,
+  /license|licensing|许可|许可证/i,
+  /contributing|贡献指南/i,
+  /update\s*(changelog|release\s*note)|更新日志|发布说明/i,
+];
+
+const HIGH_RISK_PATTERNS = [
+  /api\s*(key|token|secret)|密码|密钥|token|secret/i,
+  /database|schema|migration|数据库|表结构/i,
+  /auth|authentication|authorization|认证|鉴权/i,
+  /security|安全漏洞|漏洞修复/i,
+  /payment|支付|billing|计费/i,
+  /delete|删除|drop|truncate/i,
+  /deploy|deployment|部署/i,
+  /config|configuration|配置文件/i,
+  /env|environment|环境变量/i,
+];
+
+export function isSafeTask(rawText: string): boolean {
+  const text = rawText.toLowerCase();
+  
+  for (const pattern of HIGH_RISK_PATTERNS) {
+    if (pattern.test(text)) {
+      return false;
+    }
+  }
+  
+  for (const pattern of SAFE_TASK_PATTERNS) {
+    if (pattern.test(text)) {
+      return true;
+    }
+  }
+  
+  return false;
+}
+
+export interface SafeTaskLike extends TaskLike {
+  rawText: string;
+}
+
+export function getNextRunnableSafeTask<T extends SafeTaskLike>(tasks: T[]): T | null {
+  const safeTasks = tasks.filter((task) => isSafeTask(task.rawText));
+  return getNextRunnableTask(safeTasks);
+}

@@ -9,7 +9,7 @@ import { useLanguage } from "../../language-provider";
 
 const API_BASE_URL = CLIENT_API_BASE_URL;
 
-type PendingAction = "start" | "reparse" | "autopilot-start" | "autopilot-stop" | null;
+type PendingAction = "start" | "reparse" | "autopilot-start" | "autopilot-stop" | "safe-autopilot-start" | "safe-autopilot-stop" | null;
 
 function getText(language: "en" | "zh") {
   if (language === "zh") {
@@ -36,6 +36,16 @@ function getText(language: "en" | "zh") {
       autopilotStop: "停止自动驾驶",
       autopilotBadgeOn: "自动驾驶开启",
       autopilotBadgeOff: "自动驾驶关闭",
+      safeAutopilotStarting: "正在启动安全自动驾驶...",
+      safeAutopilotStarted: "安全自动驾驶已启动。ForgeFlow 只会处理文档和 UI 文本任务。",
+      safeAutopilotStartFailed: "启动安全自动驾驶失败",
+      safeAutopilotStopping: "正在停止安全自动驾驶...",
+      safeAutopilotStopped: "安全自动驾驶已停止。",
+      safeAutopilotStopFailed: "停止安全自动驾驶失败",
+      safeAutopilotStart: "启动安全自动驾驶",
+      safeAutopilotStop: "停止安全自动驾驶",
+      safeAutopilotBadgeOn: "安全自动驾驶开启",
+      safeAutopilotBadgeOff: "安全自动驾驶关闭",
     };
   }
 
@@ -63,15 +73,27 @@ function getText(language: "en" | "zh") {
     autopilotStop: "Stop Autopilot",
     autopilotBadgeOn: "Autopilot on",
     autopilotBadgeOff: "Autopilot off",
+    safeAutopilotStarting: "Starting safe autopilot...",
+    safeAutopilotStarted: "Safe autopilot started. ForgeFlow will only process documentation and UI text tasks.",
+    safeAutopilotStartFailed: "Failed to start safe autopilot",
+    safeAutopilotStopping: "Stopping safe autopilot...",
+    safeAutopilotStopped: "Safe autopilot stopped.",
+    safeAutopilotStopFailed: "Failed to stop safe autopilot",
+    safeAutopilotStart: "Start Safe Autopilot",
+    safeAutopilotStop: "Stop Safe Autopilot",
+    safeAutopilotBadgeOn: "Safe autopilot on",
+    safeAutopilotBadgeOff: "Safe autopilot off",
   };
 }
 
 export function ProjectActions({
   projectId,
   autoRunEnabled,
+  safeAutoRunEnabled,
 }: {
   projectId: string;
   autoRunEnabled: boolean;
+  safeAutoRunEnabled: boolean;
 }) {
   const { language } = useLanguage();
   const router = useRouter();
@@ -157,13 +179,47 @@ export function ProjectActions({
     }
   }
 
+  async function handleSafeAutopilotStart() {
+    setPendingAction("safe-autopilot-start");
+    setMessage(text.safeAutopilotStarting);
+
+    try {
+      const payload = await post(`/projects/${projectId}/safe-autopilot/start`);
+      setMessage(payload.message ?? text.safeAutopilotStarted);
+      router.refresh();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : text.safeAutopilotStartFailed);
+    } finally {
+      setPendingAction(null);
+    }
+  }
+
+  async function handleSafeAutopilotStop() {
+    setPendingAction("safe-autopilot-stop");
+    setMessage(text.safeAutopilotStopping);
+
+    try {
+      const payload = await post(`/projects/${projectId}/safe-autopilot/stop`);
+      setMessage(payload.message ?? text.safeAutopilotStopped);
+      router.refresh();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : text.safeAutopilotStopFailed);
+    } finally {
+      setPendingAction(null);
+    }
+  }
+
   const autopilotBusy = pendingAction === "autopilot-start" || pendingAction === "autopilot-stop";
+  const safeAutopilotBusy = pendingAction === "safe-autopilot-start" || pendingAction === "safe-autopilot-stop";
 
   return (
     <div className="stack">
       <div className="inline-meta">
         <span className={`tag ${autoRunEnabled ? "good" : "warn"}`}>
           {autoRunEnabled ? text.autopilotBadgeOn : text.autopilotBadgeOff}
+        </span>
+        <span className={`tag ${safeAutoRunEnabled ? "good" : "warn"}`}>
+          {safeAutoRunEnabled ? text.safeAutopilotBadgeOn : text.safeAutopilotBadgeOff}
         </span>
       </div>
       <div className="feedback">{message}</div>
@@ -181,6 +237,15 @@ export function ProjectActions({
         ) : (
           <button className="button" type="button" onClick={handleAutopilotStart} disabled={pendingAction !== null}>
             {autopilotBusy ? text.processing : text.autopilotStart}
+          </button>
+        )}
+        {safeAutoRunEnabled ? (
+          <button className="button secondary" type="button" onClick={handleSafeAutopilotStop} disabled={pendingAction !== null}>
+            {safeAutopilotBusy ? text.processing : text.safeAutopilotStop}
+          </button>
+        ) : (
+          <button className="button" type="button" onClick={handleSafeAutopilotStart} disabled={pendingAction !== null}>
+            {safeAutopilotBusy ? text.processing : text.safeAutopilotStart}
           </button>
         )}
         <button className="button ghost" type="button" onClick={() => router.refresh()} disabled={pendingAction !== null}>

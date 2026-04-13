@@ -57,6 +57,7 @@ export interface ProjectDetailResponse {
       blockedPaths: string[];
       defaultBranch: string | null;
       autoRunEnabled: boolean;
+      safeAutoRunEnabled: boolean;
       memoryUpdatedAt: string | null;
       createdAt: string;
       updatedAt: string;

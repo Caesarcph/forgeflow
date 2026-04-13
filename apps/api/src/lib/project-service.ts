@@ -246,6 +246,7 @@ function serializeProject(project: {
   blockedPathsJson: string | null;
   defaultBranch: string | null;
   autoRunEnabled: boolean;
+  safeAutoRunEnabled: boolean;
   memoryUpdatedAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
@@ -272,6 +273,7 @@ function serializeProject(project: {
     blockedPaths: parseJsonField<string[]>(project.blockedPathsJson, []),
     defaultBranch: project.defaultBranch,
     autoRunEnabled: project.autoRunEnabled,
+    safeAutoRunEnabled: project.safeAutoRunEnabled,
     memoryUpdatedAt: project.memoryUpdatedAt?.toISOString() ?? null,
     createdAt: project.createdAt.toISOString(),
     updatedAt: project.updatedAt.toISOString(),

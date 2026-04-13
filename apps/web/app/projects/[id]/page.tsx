@@ -139,7 +139,7 @@ export default async function ProjectDetailPage({
               <h2>{text.taskBoard}</h2>
             </div>
           </div>
-          <ProjectActions projectId={detail.project.id} autoRunEnabled={detail.project.autoRunEnabled} />
+            <ProjectActions projectId={detail.project.id} autoRunEnabled={detail.project.autoRunEnabled} safeAutoRunEnabled={detail.project.safeAutoRunEnabled} />
           <TaskBoard tasks={detail.tasks} />
         </div>
 

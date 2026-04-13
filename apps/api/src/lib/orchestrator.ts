@@ -7,8 +7,10 @@ import {
   ORCHESTRATOR_STAGE_RETRY_POLICY,
   assertTaskStatusTransition,
   getNextRunnableTask,
+  getNextRunnableSafeTask,
   getOrchestratorStartStage,
   getStageRetryDelayMs,
+  isSafeTask,
   type AgentRole,
   type OrchestratorStage,
   type PlannerPayload,
@@ -1875,6 +1877,272 @@ export async function stopProjectAutopilot(projectId: string) {
     message: activeProjectExecutions.has(projectId)
       ? "Autopilot stop requested. The current task will finish before ForgeFlow stops."
       : "Autopilot disabled.",
+  };
+}
+
+async function setProjectSafeAutoRunEnabled(projectId: string, enabled: boolean) {
+  await prisma.project.update({
+    where: {
+      id: projectId,
+    },
+    data: {
+      safeAutoRunEnabled: enabled,
+    },
+  });
+}
+
+async function isProjectSafeAutoRunEnabled(projectId: string) {
+  const project = await prisma.project.findUnique({
+    where: {
+      id: projectId,
+    },
+    select: {
+      safeAutoRunEnabled: true,
+    },
+  });
+
+  return project?.safeAutoRunEnabled ?? false;
+}
+
+async function runNextSafeTask(projectId: string) {
+  const project = await prisma.project.findUniqueOrThrow({
+    where: {
+      id: projectId,
+    },
+    include: {
+      tasks: {
+        orderBy: {
+          sourceLineStart: "asc",
+        },
+      },
+    },
+  });
+
+  const safeTask = getNextRunnableSafeTask(
+    project.tasks.map((task) => ({
+      taskCode: task.taskCode,
+      status: task.status as TaskStatus,
+      dependencies: parseJsonField<string[]>(task.dependenciesJson, []),
+      sourceLineStart: task.sourceLineStart,
+      rawText: task.rawText,
+    })),
+  );
+
+  if (!safeTask) {
+    publishProjectEvent({
+      type: "info",
+      projectId,
+      timestamp: new Date().toISOString(),
+      message: "No safe runnable task found.",
+    });
+
+    return {
+      mode: "safe-autopilot",
+      result: "idle",
+      message: "No safe runnable task found. Safe autopilot only processes documentation and UI text tasks.",
+    };
+  }
+
+  const selectedTask = project.tasks.find((task) => task.taskCode === safeTask.taskCode);
+
+  if (!selectedTask) {
+    throw new Error(`Safe task ${safeTask.taskCode} could not be resolved`);
+  }
+
+  if (!isSafeTask(selectedTask.rawText)) {
+    publishProjectEvent({
+      type: "info",
+      projectId,
+      timestamp: new Date().toISOString(),
+      message: `Task ${selectedTask.taskCode} is not classified as safe. Skipping.`,
+    });
+
+    return {
+      mode: "safe-autopilot",
+      result: "idle",
+      message: `Task ${selectedTask.taskCode} is not a safe task.`,
+    };
+  }
+
+  await prisma.task.update({
+    where: {
+      id: selectedTask.id,
+    },
+    data: {
+      safeMode: true,
+    },
+  });
+
+  const run = await runTask(selectedTask.id);
+
+  return {
+    ...run,
+    selectedTaskId: selectedTask.id,
+    selectedTaskCode: selectedTask.taskCode,
+  };
+}
+
+async function runProjectSafeAutopilotLoop(projectId: string) {
+  let completedTasks = 0;
+
+  publishProjectEvent({
+    type: "info",
+    projectId,
+    timestamp: new Date().toISOString(),
+    message: "Safe autopilot started. ForgeFlow will only process documentation and UI text tasks.",
+  });
+
+  while (await isProjectSafeAutoRunEnabled(projectId)) {
+    const run = await runNextSafeTask(projectId);
+
+    if (run.result === "idle") {
+      publishProjectEvent({
+        type: "info",
+        projectId,
+        timestamp: new Date().toISOString(),
+        message: "Safe autopilot stopped: no safe runnable task remains.",
+      });
+      return;
+    }
+
+    if (!("selectedTaskId" in run) || !run.selectedTaskId || !run.selectedTaskCode) {
+      publishProjectEvent({
+        type: "info",
+        projectId,
+        timestamp: new Date().toISOString(),
+        message: "Safe autopilot stopped: the next safe task could not be resolved.",
+      });
+      return;
+    }
+
+    if (run.result === "failed" || run.result === "blocked") {
+      await resetModelsToDefault(projectId);
+      publishProjectEvent({
+        type: "info",
+        projectId,
+        timestamp: new Date().toISOString(),
+        message: `Safe autopilot skipping ${run.selectedTaskCode}: ${run.result}. Moving to next safe task.`,
+      });
+      continue;
+    }
+
+    if (run.result === "waiting_human") {
+      const task = await prisma.task.findUnique({
+        where: {
+          id: run.selectedTaskId,
+        },
+        select: {
+          autoApprovable: true,
+          taskCode: true,
+        },
+      });
+
+      if (task?.autoApprovable) {
+        await approveTask(run.selectedTaskId, "Auto-approved by ForgeFlow safe autopilot after successful verification");
+        await resetModelsToDefault(projectId);
+        completedTasks += 1;
+
+        publishProjectEvent({
+          type: "info",
+          projectId,
+          timestamp: new Date().toISOString(),
+          message: `Safe autopilot auto-approved ${task.taskCode}. Completed tasks this session: ${completedTasks}.`,
+        });
+
+        continue;
+      }
+
+      publishProjectEvent({
+        type: "info",
+        projectId,
+        timestamp: new Date().toISOString(),
+        message: `Safe autopilot stopped on ${run.selectedTaskCode}: waiting for human approval.`,
+      });
+      return;
+    }
+
+    if (run.result === "done") {
+      await resetModelsToDefault(projectId);
+      completedTasks += 1;
+      continue;
+    }
+
+    publishProjectEvent({
+      type: "info",
+      projectId,
+      timestamp: new Date().toISOString(),
+      message: `Safe autopilot stopped on ${run.selectedTaskCode}: reached terminal state ${run.result}.`,
+    });
+    return;
+  }
+
+  publishProjectEvent({
+    type: "info",
+    projectId,
+    timestamp: new Date().toISOString(),
+    message: "Safe autopilot stop requested. ForgeFlow will remain idle until started again.",
+  });
+}
+
+function launchSafeAutopilotLoop(projectId: string) {
+  activeProjectExecutions.add(projectId);
+
+  void (async () => {
+    let completedNormally = false;
+
+    try {
+      await runProjectSafeAutopilotLoop(projectId);
+      completedNormally = true;
+    } catch (error) {
+      publishProjectEvent({
+        type: "info",
+        projectId,
+        timestamp: new Date().toISOString(),
+        message: backgroundExecutionFailedMessage("Background safe autopilot execution", error),
+      });
+    } finally {
+      if (completedNormally) {
+        await setProjectSafeAutoRunEnabled(projectId, false).catch(() => undefined);
+      }
+      activeProjectExecutions.delete(projectId);
+    }
+  })();
+}
+
+export async function startProjectSafeAutopilotInBackground(projectId: string) {
+  if (activeProjectExecutions.has(projectId)) {
+    return {
+      accepted: false,
+      message: "Project execution is already running.",
+    };
+  }
+
+  await setProjectSafeAutoRunEnabled(projectId, true);
+  launchSafeAutopilotLoop(projectId);
+
+  return {
+    accepted: true,
+    message: "Safe autopilot started in the background. Only documentation and UI text tasks will be processed.",
+  };
+}
+
+export async function stopProjectSafeAutopilot(projectId: string) {
+  await setProjectSafeAutoRunEnabled(projectId, false);
+
+  publishProjectEvent({
+    type: "info",
+    projectId,
+    timestamp: new Date().toISOString(),
+    message: activeProjectExecutions.has(projectId)
+      ? "Safe autopilot stop requested. The current task will finish before ForgeFlow stops pulling new work."
+      : "Safe autopilot disabled.",
+  });
+
+  return {
+    accepted: true,
+    message: activeProjectExecutions.has(projectId)
+      ? "Safe autopilot stop requested. The current task will finish before ForgeFlow stops."
+      : "Safe autopilot disabled.",
   };
 }
 
