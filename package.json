@@ -7,7 +7,7 @@
     "build": "turbo run build",
     "dev": "turbo run dev --parallel",
     "typecheck": "turbo run typecheck",
-    "test:unit": "pnpm build && node --test ./tests/intake.test.mjs ./tests/intake-jobs.test.mjs ./tests/execution-boundaries.test.mjs ./tests/fallback-model.test.mjs ./tests/project-memory.test.mjs ./tests/writeback.test.mjs ./tests/core-state-machine.test.mjs",
+    "test:unit": "pnpm build && node --test ./tests/intake.test.mjs ./tests/intake-jobs.test.mjs ./tests/execution-boundaries.test.mjs ./tests/execution-budget.test.mjs ./tests/fallback-model.test.mjs ./tests/project-memory.test.mjs ./tests/writeback.test.mjs ./tests/core-state-machine.test.mjs ./tests/testing-command.test.mjs",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "format": "pnpm -r exec prettier --check ."

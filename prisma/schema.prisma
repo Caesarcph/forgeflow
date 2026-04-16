@@ -41,8 +41,10 @@ model Project {
   tasks                      Task[]
   agentConfigs               AgentConfig[]
   taskRuns                   TaskRun[]
-  intakeJobs                 IntakeJob[]
-  autopilotConfig            AutopilotConfig?
+  intakeJobs IntakeJob[]
+  autopilotConfig AutopilotConfig?
+  autopilotSessions AutopilotSession[]
+  executionBudget ExecutionBudget?
 }
 
 model Task {
@@ -173,22 +175,56 @@ model IntakeJob {
 }
 
 model AutopilotConfig {
-  id                          String   @id @default(cuid())
-  projectId                   String   @unique
-  stopOnHumanGate             Boolean  @default(true)
-  stopOnFirstFailure          Boolean  @default(true)
-  stopOnConsecutiveFailures   Int      @default(3)
-  stopOnBudgetTokens          Int?
-  stopOnBudgetCostCents       Int?
-  stopOnMaxTasks              Int?
-  stopOnMaxTimeMinutes        Int?
-  approvalGateEvery           Int?
-  approvalGateOnHighRisk      Boolean  @default(true)
-  autoApproveSafeTasks        Boolean  @default(true)
-  autoApproveAfterVerifications Int    @default(2)
-  pauseOnSensitiveFiles       Boolean  @default(true)
-  requireReviewOnFiles        String?
-  createdAt                   DateTime @default(now())
-  updatedAt                   DateTime @updatedAt
-  project                     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  id String @id @default(cuid())
+  projectId String @unique
+  stopOnHumanGate Boolean @default(true)
+  stopOnFirstFailure Boolean @default(true)
+  stopOnConsecutiveFailures Int @default(3)
+  stopOnBudgetTokens Int?
+  stopOnBudgetCostCents Int?
+  stopOnMaxTasks Int?
+  stopOnMaxTimeMinutes Int?
+  approvalGateEvery Int?
+  approvalGateOnHighRisk Boolean @default(true)
+  autoApproveSafeTasks Boolean @default(true)
+  autoApproveAfterVerifications Int @default(2)
+  pauseOnSensitiveFiles Boolean @default(true)
+  requireReviewOnFiles String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  sessions AutopilotSession[]
+}
+
+model AutopilotSession {
+  id String @id @default(cuid())
+  projectId String
+  configId String
+  status String @default("running")
+  tasksCompleted Int @default(0)
+  tasksFailed Int @default(0)
+  consecutiveFailures Int @default(0)
+  tokensUsed Int @default(0)
+  costCents Int @default(0)
+  approvalsGranted Int @default(0)
+  pendingApproval Boolean @default(false)
+  stopReason String?
+  startedAt DateTime @default(now())
+  endedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  config AutopilotConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
+}
+
+model ExecutionBudget {
+  id String @id @default(cuid())
+  projectId String @unique
+  maxTimeMinutes Int?
+  maxRetries Int @default(3)
+  maxCommands Int?
+  maxModelCalls Int?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 }

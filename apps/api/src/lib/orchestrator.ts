@@ -30,6 +30,7 @@ import { assertSafeShellCommand, extractShellToolUseFromAgentLog } from "./comma
 import { assertBoundaryValidation, captureProjectSnapshot, diffProjectSnapshots, validateBoundaryChanges } from "./execution-boundaries.js";
 import { createExecutionWorkspace, syncWorkspaceChangesToProject, type SyncDryRunResult } from "./execution-workspace.js";
 import { publishProjectEvent } from "./events.js";
+import { checkExecutionBudgetExhausted, getExecutionBudget, type ExecutionBudgetRecord } from "./execution-budget-service.js";
 import {
   captureGitRepoState,
   prepareRollbackArtifacts,
@@ -40,6 +41,7 @@ import {
 import { buildProjectMemorySnapshot } from "./project-memory.js";
 import { approveTask, checkAutopilotStopConditions, getAutopilotConfig, type AutopilotSessionState } from "./project-service.js";
 import { persistAgentRunArtifacts, persistGitRunArtifacts, persistVerificationRunArtifacts } from "./run-artifacts.js";
+import { resolveTestingCommand } from "./testing-command.js";
 
 type TaskWithProject = Awaited<
   ReturnType<
@@ -52,7 +54,6 @@ type TaskWithProject = Awaited<
 
 const activeProjectExecutions = new Set<string>();
 const activeTaskExecutions = new Set<string>();
-
 export async function initializeExecutionState() {
   const autoRunProjects = await prisma.project.findMany({
     where: {
@@ -313,6 +314,7 @@ async function executeRole(input: {
   roleName: AgentRole;
   goal: string;
   systemPromptFallback: string;
+  onCommandUse?: () => void;
 }) {
   const agentConfig = await getAgentConfig(input.task.projectId, input.roleName);
   const projectMemory = await buildProjectMemorySnapshot({
@@ -372,6 +374,7 @@ async function executeRole(input: {
 
       if (shellToolUse) {
         assertSafeShellCommand(shellToolUse.command);
+        input.onCommandUse?.();
         const workdir = shellToolUse.workdir ? path.resolve(shellToolUse.workdir) : "";
         const workspaceRoot = path.resolve(workspacePath);
 
@@ -619,7 +622,47 @@ type StageMachineState = {
   debugReason?: string;
   debugCycles: number;
   modelEscalations: number;
+  executionStartedAt: Date;
+  totalRetries: number;
+  totalCommands: number;
+  totalModelCalls: number;
 };
+
+class ExecutionBudgetExhaustedError extends Error {
+  constructor(readonly reason: string) {
+    super(reason);
+    this.name = "ExecutionBudgetExhaustedError";
+  }
+}
+
+function extractAttemptCount(error: unknown) {
+  if (!(error instanceof ForgeFlowExecutionError)) {
+    return 1;
+  }
+
+  const attempts = error.details?.attempts;
+  return Array.isArray(attempts) && attempts.length > 0 ? attempts.length : 1;
+}
+
+function getExecutionBudgetUsage(state: StageMachineState) {
+  return {
+    elapsedTimeMinutes: Math.max(0, Math.ceil((Date.now() - state.executionStartedAt.getTime()) / 60000)),
+    totalRetries: state.totalRetries,
+    totalCommands: state.totalCommands,
+    totalModelCalls: state.totalModelCalls,
+  };
+}
+
+async function enforceExecutionBudget(task: TaskWithProject, state: StageMachineState, budget: ExecutionBudgetRecord) {
+  const budgetStatus = checkExecutionBudgetExhausted(budget, getExecutionBudgetUsage(state));
+
+  if (!budgetStatus.exhausted || !budgetStatus.reason) {
+    return;
+  }
+
+  await forceTaskStatus(task, state.currentStatus, "blocked", budgetStatus.reason);
+  throw new ExecutionBudgetExhaustedError(budgetStatus.reason);
+}
 
 async function escalateAllModels(projectId: string, currentModel: string): Promise<string | null> {
   const currentIndex = MODEL_ESCALATION_CHAIN.indexOf(currentModel);
@@ -772,6 +815,8 @@ async function finalizeAgentRunPersistence(input: {
 
 async function retryAgentStageExecution(input: {
   task: TaskWithProject;
+  state: StageMachineState;
+  budget: ExecutionBudgetRecord;
   stage: Extract<OrchestratorStage, "planning" | "coding" | "reviewing" | "debugging">;
   roleName: AgentRole;
   goal: string;
@@ -783,13 +828,28 @@ async function retryAgentStageExecution(input: {
 
   for (let attempt = 1; attempt <= policy.maxAttempts; attempt += 1) {
     try {
+      await enforceExecutionBudget(input.task, input.state, input.budget);
       return await executeRole({
         task: input.task,
         roleName: input.roleName,
         goal: input.goal,
         systemPromptFallback: input.systemPromptFallback,
+        onCommandUse: () => {
+          const budgetStatus = checkExecutionBudgetExhausted(input.budget, getExecutionBudgetUsage(input.state));
+          if (budgetStatus.exhausted && budgetStatus.reason) {
+            throw new ExecutionBudgetExhaustedError(budgetStatus.reason);
+          }
+
+          input.state.totalCommands += 1;
+        },
       });
     } catch (error) {
+      input.state.totalModelCalls += extractAttemptCount(error);
+
+      if (error instanceof ExecutionBudgetExhaustedError) {
+        throw error;
+      }
+
       const isFinalAttempt = attempt >= policy.maxAttempts;
       const failureMessage = error instanceof Error ? error.message : String(error);
 
@@ -812,6 +872,9 @@ async function retryAgentStageExecution(input: {
         throw error;
       }
 
+      input.state.totalRetries += 1;
+      await enforceExecutionBudget(input.task, input.state, input.budget);
+
       const delayMs = getStageRetryDelayMs(input.stage, attempt + 1);
       publishProjectEvent({
         type: "info",
@@ -828,6 +891,8 @@ async function retryAgentStageExecution(input: {
 
 async function retryRoleWithStructuredFallback<T>(input: {
   task: TaskWithProject;
+  state: StageMachineState;
+  budget: ExecutionBudgetRecord;
   stage: Extract<OrchestratorStage, "planning" | "reviewing" | "debugging">;
   roleName: AgentRole;
   goal: string;
@@ -845,12 +910,22 @@ async function retryRoleWithStructuredFallback<T>(input: {
     let failureMessage = "";
 
     try {
+      await enforceExecutionBudget(input.task, input.state, input.budget);
       execution = await executeRole({
         task: input.task,
         roleName: input.roleName,
         goal: input.goal,
         systemPromptFallback: input.systemPromptFallback,
+        onCommandUse: () => {
+          const budgetStatus = checkExecutionBudgetExhausted(input.budget, getExecutionBudgetUsage(input.state));
+          if (budgetStatus.exhausted && budgetStatus.reason) {
+            throw new ExecutionBudgetExhaustedError(budgetStatus.reason);
+          }
+
+          input.state.totalCommands += 1;
+        },
       });
+      input.state.totalModelCalls += execution.executionAttempts.length;
       const payload = input.extractPayload(execution.result);
 
       if (payload) {
@@ -866,6 +941,14 @@ async function retryRoleWithStructuredFallback<T>(input: {
 
       failureMessage = `${input.roleName} returned no structured ${input.stage} payload.`;
     } catch (error) {
+      if (!(error instanceof ExecutionBudgetExhaustedError)) {
+        input.state.totalModelCalls += extractAttemptCount(error);
+      }
+
+      if (error instanceof ExecutionBudgetExhaustedError) {
+        throw error;
+      }
+
       failureMessage = error instanceof Error ? error.message : String(error);
     }
 
@@ -889,6 +972,9 @@ async function retryRoleWithStructuredFallback<T>(input: {
         agentConfig,
       };
     }
+
+    input.state.totalRetries += 1;
+    await enforceExecutionBudget(input.task, input.state, input.budget);
 
     const delayMs = getStageRetryDelayMs(input.stage, attempt + 1);
     publishProjectEvent({
@@ -926,6 +1012,8 @@ function fallbackDebuggerPayload(task: TaskWithProject): DebuggerPayload {
 }
 
 async function runPlanningStage(task: TaskWithProject, state: StageMachineState): Promise<StageMachineState> {
+  const budget = await getExecutionBudget(task.projectId);
+
   if (state.currentStatus !== ORCHESTRATOR_STAGES.planning.activeStatus) {
     await transitionTask(
       task,
@@ -938,6 +1026,8 @@ async function runPlanningStage(task: TaskWithProject, state: StageMachineState)
 
   const plannerOutcome = await retryRoleWithStructuredFallback({
     task,
+    state,
+    budget,
     stage: "planning",
     roleName: "planner",
     goal: task.title,
@@ -1018,6 +1108,7 @@ await finalizeAgentRunPersistence({
 }
 
 async function runCodingStage(task: TaskWithProject, state: StageMachineState): Promise<StageMachineState> {
+  const budget = await getExecutionBudget(task.projectId);
   const plannerPayload = state.plannerPayload ?? (await getLatestPlannerHandoff(task.id)) ?? fallbackPlannerPayload(task);
 
   if (!state.plannerPayload) {
@@ -1041,12 +1132,16 @@ async function runCodingStage(task: TaskWithProject, state: StageMachineState): 
 
   const coderExecution = await retryAgentStageExecution({
     task,
+    state,
+    budget,
     stage: "coding",
     roleName: "coder",
     goal: plannerPayload.goal,
     systemPromptFallback: "Implement the task with minimal, focused changes.",
     inputSummary: plannerPayload.goal,
   });
+
+  state.totalModelCalls += coderExecution.executionAttempts.length;
 
   const coderOutputSummary = coderExecution.usedFallbackModel
     ? `${coderExecution.result.outputSummary} (fallback model: ${coderExecution.actualModel})`
@@ -1113,7 +1208,12 @@ await finalizeAgentRunPersistence({
       dryRun: env.DRY_RUN,
     });
 
-    const verificationCommand = task.project.testCommand ?? task.project.lintCommand ?? task.project.buildCommand;
+    const verificationCommand = await resolveTestingCommand({
+      projectRootPath: task.project.rootPath,
+      testCommand: task.project.testCommand,
+      lintCommand: task.project.lintCommand,
+      buildCommand: task.project.buildCommand,
+    });
 
   if (!verificationCommand) {
     await transitionTask(task, ORCHESTRATOR_STAGES.coding.activeStatus, "blocked", "No verification command configured");
@@ -1160,6 +1260,7 @@ await finalizeAgentRunPersistence({
 }
 
 async function runReviewingStage(task: TaskWithProject, state: StageMachineState): Promise<StageMachineState> {
+  const budget = await getExecutionBudget(task.projectId);
   const plannerPayload = state.plannerPayload ?? (await getLatestPlannerHandoff(task.id)) ?? fallbackPlannerPayload(task);
 
   if (state.currentStatus !== ORCHESTRATOR_STAGES.reviewing.activeStatus) {
@@ -1169,6 +1270,8 @@ async function runReviewingStage(task: TaskWithProject, state: StageMachineState
 
   const reviewerOutcome = await retryRoleWithStructuredFallback({
     task,
+    state,
+    budget,
     stage: "reviewing",
     roleName: "reviewer",
     goal: plannerPayload.goal,
@@ -1312,7 +1415,13 @@ await finalizeAgentRunPersistence({
 }
 
 async function runTestingStage(task: TaskWithProject, state: StageMachineState): Promise<StageMachineState> {
-  const verificationCommand = state.verificationCommand ?? task.project.testCommand ?? task.project.lintCommand ?? task.project.buildCommand;
+  const budget = await getExecutionBudget(task.projectId);
+  const verificationCommand = state.verificationCommand ?? await resolveTestingCommand({
+    projectRootPath: task.project.rootPath,
+    testCommand: task.project.testCommand,
+    lintCommand: task.project.lintCommand,
+    buildCommand: task.project.buildCommand,
+  });
   const policy = ORCHESTRATOR_STAGE_RETRY_POLICY.testing;
 
   if (!verificationCommand) {
@@ -1333,6 +1442,8 @@ async function runTestingStage(task: TaskWithProject, state: StageMachineState):
   let lastExitCode: number | undefined;
 
   for (let attempt = 1; attempt <= policy.maxAttempts; attempt += 1) {
+    await enforceExecutionBudget(task, state, budget);
+    state.totalCommands += 1;
     const verificationResult = await runVerification(task, verificationCommand);
     const success = verificationResult.exitCode === 0;
     const isFinalAttempt = success || attempt >= policy.maxAttempts;
@@ -1490,6 +1601,9 @@ async function runTestingStage(task: TaskWithProject, state: StageMachineState):
       };
     }
 
+    state.totalRetries += 1;
+    await enforceExecutionBudget(task, state, budget);
+
     const delayMs = getStageRetryDelayMs("testing", attempt + 1);
     publishProjectEvent({
       type: "info",
@@ -1512,6 +1626,7 @@ async function runTestingStage(task: TaskWithProject, state: StageMachineState):
 }
 
 async function runDebuggingStage(task: TaskWithProject, state: StageMachineState): Promise<StageMachineState> {
+  const budget = await getExecutionBudget(task.projectId);
   const plannerPayload = state.plannerPayload ?? (await getLatestPlannerHandoff(task.id)) ?? fallbackPlannerPayload(task);
 
   if (state.currentStatus !== ORCHESTRATOR_STAGES.debugging.activeStatus) {
@@ -1528,6 +1643,8 @@ async function runDebuggingStage(task: TaskWithProject, state: StageMachineState
 
   const debuggerOutcome = await retryRoleWithStructuredFallback({
     task,
+    state,
+    budget,
     stage: "debugging",
     roleName: "debugger",
     goal: debugGoal,
@@ -1627,6 +1744,10 @@ export async function runTask(taskId: string) {
     result: undefined,
     debugCycles: 0,
     modelEscalations: 0,
+    executionStartedAt: new Date(),
+    totalRetries: 0,
+    totalCommands: 0,
+    totalModelCalls: 0,
   };
 
   publishProjectEvent({
@@ -1637,41 +1758,55 @@ export async function runTask(taskId: string) {
   });
 
   let iterations = 0;
-  while (state.stage) {
-    iterations++;
-    if (iterations > MAX_STAGE_ITERATIONS) {
-      publishProjectEvent({
-        type: "info",
-        projectId: task.projectId,
-        timestamp: new Date().toISOString(),
-        message: `Task ${task.taskCode} hit max stage iterations (${MAX_STAGE_ITERATIONS}). Force-completing as done to unblock autopilot.`,
-      });
-      await transitionTask(task, state.currentStatus, "done", `Auto-completed after ${MAX_STAGE_ITERATIONS} stage iterations.`);
-      state.stage = null;
-      state.result = "done";
-      break;
-    }
-
-    switch (state.stage) {
-      case "planning":
-        state = await runPlanningStage(task, state);
+  try {
+    while (state.stage) {
+      iterations++;
+      if (iterations > MAX_STAGE_ITERATIONS) {
+        publishProjectEvent({
+          type: "info",
+          projectId: task.projectId,
+          timestamp: new Date().toISOString(),
+          message: `Task ${task.taskCode} hit max stage iterations (${MAX_STAGE_ITERATIONS}). Force-completing as done to unblock autopilot.`,
+        });
+        await transitionTask(task, state.currentStatus, "done", `Auto-completed after ${MAX_STAGE_ITERATIONS} stage iterations.`);
+        state.stage = null;
+        state.result = "done";
         break;
-      case "coding":
-        state = await runCodingStage(task, state);
-        break;
-      case "testing":
-        state = await runTestingStage(task, state);
-        break;
-      case "reviewing":
-        state = await runReviewingStage(task, state);
-        break;
-      case "debugging":
-        state = await runDebuggingStage(task, state);
-        break;
-      default: {
-        const exhaustive: never = state.stage;
-        throw new Error(`Unhandled orchestrator stage: ${String(exhaustive)}`);
       }
+
+      switch (state.stage) {
+        case "planning":
+          state = await runPlanningStage(task, state);
+          break;
+        case "coding":
+          state = await runCodingStage(task, state);
+          break;
+        case "testing":
+          state = await runTestingStage(task, state);
+          break;
+        case "reviewing":
+          state = await runReviewingStage(task, state);
+          break;
+        case "debugging":
+          state = await runDebuggingStage(task, state);
+          break;
+        default: {
+          const exhaustive: never = state.stage;
+          throw new Error(`Unhandled orchestrator stage: ${String(exhaustive)}`);
+        }
+      }
+
+      const budget = await getExecutionBudget(task.projectId);
+      await enforceExecutionBudget(task, state, budget);
+    }
+  } catch (error) {
+    if (error instanceof ExecutionBudgetExhaustedError) {
+      state.stage = null;
+      state.currentStatus = "blocked";
+      state.result = "blocked";
+      state.message = error.reason;
+    } else {
+      throw error;
     }
   }
 

@@ -62,7 +62,7 @@ Track the highest-priority engineering work here. Mark items with `- [x]` when d
 - [ ] Add explicit human approval gates for risky file writes and shell commands
 - [ ] Add a “safe autopilot” mode that only runs low-risk documentation and UI text tasks continuously
 - [x] Add a “full autopilot” mode with configurable stop conditions, budgets, and approval gates
-- [ ] Add project-level execution budgets for time, retries, commands, and model usage
+- [x] Add project-level execution budgets for time, retries, commands, and model usage
 
 ## P3 Context And Memory
 
@@ -121,7 +121,7 @@ Track the highest-priority engineering work here. Mark items with `- [x]` when d
 - [ ] Add unit test generation for newly changed modules
 - [ ] Add UI smoke test generation for new screens and flows
 - [ ] Add end-to-end test scaffolding for critical user paths
-- [ ] Add accessibility checks into the tester stage
+- [x] Add accessibility checks into the tester stage
 - [ ] Add performance and Lighthouse checks into the tester stage
 - [ ] Add API contract verification for backend-related tasks
 - [ ] Add database migration verification when schema-affecting tasks run

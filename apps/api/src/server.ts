@@ -55,6 +55,10 @@ import {
   writeToPtySession,
 } from "./lib/pty-sessions.js";
 import { runStartupDiagnostics } from "./lib/startup-diagnostics.js";
+import {
+  getExecutionBudget,
+  updateExecutionBudget,
+} from "./lib/execution-budget-service.js";
 
 const app = Fastify({
   logger: true,
@@ -926,6 +930,37 @@ app.patch("/api/projects/:id/autopilot-config", async (request, reply) => {
     return sendApiError(reply, {
       statusCode: 400,
       error: error instanceof Error ? error.message : "Failed to update autopilot config",
+    });
+  }
+});
+
+app.get("/api/projects/:id/execution-budget", async (request, reply) => {
+  const params = z.object({
+    id: z.string(),
+  }).parse(request.params);
+
+  try {
+    return { budget: await getExecutionBudget(params.id) };
+  } catch (error) {
+    return sendApiError(reply, {
+      statusCode: 404,
+      error: "Project not found",
+      code: "PROJECT_NOT_FOUND",
+    });
+  }
+});
+
+app.patch("/api/projects/:id/execution-budget", async (request, reply) => {
+  const params = z.object({
+    id: z.string(),
+  }).parse(request.params);
+
+  try {
+    return { budget: await updateExecutionBudget(params.id, request.body) };
+  } catch (error) {
+    return sendApiError(reply, {
+      statusCode: 400,
+      error: error instanceof Error ? error.message : "Failed to update execution budget",
     });
   }
 });

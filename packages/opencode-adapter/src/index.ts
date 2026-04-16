@@ -577,7 +577,19 @@ export async function executeAgentWithFallback(input: {
     });
 
     if (!fallbackModel || fallbackModel === input.context.model.trim()) {
-      throw primaryError;
+      throw executionError(
+        primaryError instanceof ForgeFlowExecutionError ? primaryError.code : "PRIMARY_MODEL_FAILED",
+        primaryError.message,
+        {
+          attempts,
+          provider: input.context.provider,
+          primaryModel: input.context.model,
+          error:
+            primaryError instanceof ForgeFlowExecutionError
+              ? { code: primaryError.code, message: primaryError.message, details: primaryError.details }
+              : { message: primaryError.message },
+        },
+      );
     }
 
     input.onFallback?.({
@@ -630,9 +642,10 @@ export async function executeAgentWithFallback(input: {
               ? { code: primaryError.code, message: primaryError.message, details: primaryError.details }
               : { message: primaryError.message },
           fallbackError:
-            fallbackError instanceof ForgeFlowExecutionError
+          fallbackError instanceof ForgeFlowExecutionError
               ? { code: fallbackError.code, message: fallbackError.message, details: fallbackError.details }
               : { message: fallbackError.message },
+          attempts,
         },
       );
     }

@@ -64,6 +64,14 @@ export interface ProjectDetailResponse {
       createdAt: string;
       updatedAt: string;
     };
+    executionBudget: {
+      id: string;
+      projectId: string;
+      maxTimeMinutes: number | null;
+      maxRetries: number;
+      maxCommands: number | null;
+      maxModelCalls: number | null;
+    };
     summary: {
       status: string;
       counts: Record<string, number>;

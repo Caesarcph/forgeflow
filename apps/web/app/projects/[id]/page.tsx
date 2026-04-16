@@ -6,6 +6,7 @@ import { getProjectDetail } from "../../../lib/api";
 import { LANGUAGE_COOKIE_NAME, resolveLanguage, type Language } from "../../../lib/i18n";
 import { AgentConfigPanel } from "./agent-config-panel";
 import { AutopilotConfigPanel } from "./autopilot-config-panel";
+import { ExecutionBudgetPanel } from "./execution-budget-panel";
 import { LiveActivity } from "./live-activity";
 import { ProjectMemoryPanel } from "./project-memory-panel";
 import { ProjectActions } from "./project-actions";
@@ -71,6 +72,7 @@ export default async function ProjectDetailPage({
   projectMemory: "项目记忆",
   agentConfig: "Agent 配置",
   autopilotConfig: "自动驾驶配置",
+  executionBudget: "执行预算",
   recentRuns: "最近 Runs",
           noHistory: "还没有执行记录。",
           liveActivity: "实时活动",
@@ -103,6 +105,7 @@ export default async function ProjectDetailPage({
   projectMemory: "Project Memory",
   agentConfig: "Agent Config",
   autopilotConfig: "Autopilot Config",
+  executionBudget: "Execution Budget",
   recentRuns: "Recent Runs",
   noHistory: "No execution history yet.",
   liveActivity: "Live Activity",
@@ -191,6 +194,11 @@ export default async function ProjectDetailPage({
 <section className="panel">
   <h2>{text.autopilotConfig}</h2>
   <AutopilotConfigPanel projectId={detail.project.id} />
+</section>
+
+<section className="panel">
+  <h2>{text.executionBudget}</h2>
+  <ExecutionBudgetPanel projectId={detail.project.id} initialBudget={detail.executionBudget} />
 </section>
 
 <section className="panel">

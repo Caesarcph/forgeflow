@@ -16,6 +16,7 @@ import { updateCheckboxInFile, type DryRunResult } from "@forgeflow/task-writeba
 import { z } from "zod";
 
 import { env } from "./env.js";
+import { getExecutionBudget } from "./execution-budget-service.js";
 import { publishProjectEvent } from "./events.js";
 import { readRollbackManifest, restoreRollbackManifest } from "./git-run-tracking.js";
 import {
@@ -584,9 +585,11 @@ export async function getProjectDetail(projectId: string) {
     memoryPromptBlock: persistedMemoryProject.memoryPromptBlock ?? null,
     memoryRelevantFilesJson: persistedMemoryProject.memoryRelevantFilesJson ?? null,
   });
+  const executionBudget = await getExecutionBudget(projectId);
 
   return {
     project: serializedProject,
+    executionBudget,
     summary: {
       status: getProjectStatus(taskStatuses),
       counts,
