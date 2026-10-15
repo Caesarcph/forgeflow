@@ -10,6 +10,7 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/Caesarcph/forgeflow/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/Caesarcph/forgeflow/actions/workflows/ci.yml/badge.svg"></a>
   <a href="https://github.com/Caesarcph/forgeflow/blob/main/LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-0f172a.svg?style=for-the-badge"></a>
   <img alt="Status: Alpha" src="https://img.shields.io/badge/status-alpha-c2410c.svg?style=for-the-badge">
   <img alt="Local First" src="https://img.shields.io/badge/local--first-yes-0f766e.svg?style=for-the-badge">
@@ -261,6 +262,7 @@ pnpm test:unit
 - [发布准备清单](./docs/release-readiness-checklist.md)
 - [发布执行清单](./docs/release-checklist.md)
 - [路线图 TODO](./TODO.md)
+- 设计文档：[产品需求文档 PRD](./docs/design/multi_agent_dev_orchestrator_prd.md)、[全自动驾驶模式（英文）](./docs/design/IMPLEMENTATION_SUMMARY.md)、[Dry-run 模式（英文）](./docs/design/DRY-RUN-IMPLEMENTATION.md)
 
 ## 贡献
 

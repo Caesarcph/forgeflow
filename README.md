@@ -10,6 +10,7 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/Caesarcph/forgeflow/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/Caesarcph/forgeflow/actions/workflows/ci.yml/badge.svg"></a>
   <a href="https://github.com/Caesarcph/forgeflow/blob/main/LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-0f172a.svg?style=for-the-badge"></a>
   <img alt="Status: Alpha" src="https://img.shields.io/badge/status-alpha-c2410c.svg?style=for-the-badge">
   <img alt="Local First" src="https://img.shields.io/badge/local--first-yes-0f766e.svg?style=for-the-badge">
@@ -263,6 +264,7 @@ pnpm test:unit
 - [Release Readiness Checklist](./docs/release-readiness-checklist.md)
 - [Release Checklist](./docs/release-checklist.md)
 - [Roadmap TODO](./TODO.md)
+- Design notes: [Product requirements (PRD, Chinese)](./docs/design/multi_agent_dev_orchestrator_prd.md), [Full autopilot mode](./docs/design/IMPLEMENTATION_SUMMARY.md), [Dry-run mode](./docs/design/DRY-RUN-IMPLEMENTATION.md)
 
 ## Contributing
 
