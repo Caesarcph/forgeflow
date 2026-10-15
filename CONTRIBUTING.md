@@ -15,9 +15,9 @@ ForgeFlow is still an alpha-stage local developer tool, so good contributions ar
 ## Before You Open A PR
 
 1. Sync with the current docs:
-   - [README.md](D:/Opencode_Orch/README.md)
-   - [docs/troubleshooting.md](D:/Opencode_Orch/docs/troubleshooting.md)
-   - [docs/release-readiness-checklist.md](D:/Opencode_Orch/docs/release-readiness-checklist.md)
+   - [README.md](./README.md)
+   - [docs/troubleshooting.md](./docs/troubleshooting.md)
+   - [docs/release-readiness-checklist.md](./docs/release-readiness-checklist.md)
 2. Run:
 
 ```powershell

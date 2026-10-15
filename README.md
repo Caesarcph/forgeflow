@@ -263,6 +263,7 @@ pnpm test:unit
 - [Release Readiness Checklist](./docs/release-readiness-checklist.md)
 - [Release Checklist](./docs/release-checklist.md)
 - [Roadmap TODO](./TODO.md)
+- Design notes: [Product requirements (PRD, Chinese)](./docs/design/multi_agent_dev_orchestrator_prd.md), [Full autopilot mode](./docs/design/IMPLEMENTATION_SUMMARY.md), [Dry-run mode](./docs/design/DRY-RUN-IMPLEMENTATION.md)
 
 ## Contributing
 
