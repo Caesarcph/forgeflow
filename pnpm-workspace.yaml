@@ -1,3 +1,8 @@
 packages:
   - apps/*
   - packages/*
+
+# node-pty ships prebuilt binaries only for Windows and macOS; allow its
+# install script so it can compile from source on Linux (e.g. CI).
+onlyBuiltDependencies:
+  - node-pty
